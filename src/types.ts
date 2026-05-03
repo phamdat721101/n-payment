@@ -31,6 +31,11 @@ export interface GoatCredentials {
   apiUrl?: string;
 }
 
+export interface BtcLendingConfig {
+  vaultAddress: string;
+  collateralRatio?: number;
+}
+
 export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
@@ -38,6 +43,7 @@ export interface NPaymentConfig {
   x402?: { facilitatorUrl?: string };
   mpp?: { currency?: string };
   goat?: GoatCredentials;
+  btcLending?: BtcLendingConfig;
   analytics?: { plugins?: AnalyticsPlugin[] };
 }
 

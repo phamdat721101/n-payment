@@ -76,6 +76,30 @@ describe('createConfig', () => {
     });
     expect(cfg.goat?.apiKey).toBe('k');
   });
+
+  it('accepts btcLending config with goat chain', () => {
+    const cfg = createConfig({
+      chains: ['goat-mainnet'], ows: validOws,
+      goat: { apiKey: 'k', apiSecret: 's', merchantId: 'm' },
+      btcLending: { vaultAddress: '0xVAULT' },
+    });
+    expect(cfg.btcLending?.vaultAddress).toBe('0xVAULT');
+  });
+
+  it('throws when btcLending used without goat chain', () => {
+    expect(() => createConfig({
+      chains: ['base-sepolia'], ows: validOws,
+      btcLending: { vaultAddress: '0xVAULT' },
+    })).toThrow('btcLending requires a GOAT chain');
+  });
+
+  it('throws when btcLending missing vaultAddress', () => {
+    expect(() => createConfig({
+      chains: ['goat-mainnet'], ows: validOws,
+      goat: { apiKey: 'k', apiSecret: 's', merchantId: 'm' },
+      btcLending: { vaultAddress: '' },
+    })).toThrow('vaultAddress is required');
+  });
 });
 
 // ─── chains ──────────────────────────────────────────────────────────────────
@@ -94,6 +118,12 @@ describe('chains', () => {
     const all: any[] = ['base-sepolia', 'arbitrum-sepolia', 'tempo-testnet'];
     expect(getChainsForProtocol(all, 'x402')).toEqual(['base-sepolia', 'arbitrum-sepolia']);
     expect(getChainsForProtocol(all, 'mpp')).toEqual(['tempo-testnet']);
+  });
+
+  it('goat chains include BTC tokens', () => {
+    expect(getChain('goat-mainnet').tokens.WBTC).toBeDefined();
+    expect(getChain('goat-mainnet').tokens.PegBTC).toBeDefined();
+    expect(getChain('goat-testnet').tokens.WBTC).toBeDefined();
   });
 });
 

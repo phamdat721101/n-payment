@@ -25,7 +25,7 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     name: 'GOAT Testnet3',
     rpcUrl: 'https://rpc.testnet3.goat.network',
     protocols: ['goat'],
-    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000' },
+    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', WBTC: '0x0000000000000000000000000000000000000000', PegBTC: '0x0000000000000000000000000000000000000000' },
     facilitator: 'https://api.x402.goat.network',
   },
   'goat-mainnet': {
@@ -34,7 +34,7 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     name: 'GOAT Network',
     rpcUrl: 'https://rpc.goat.network',
     protocols: ['goat'],
-    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000' },
+    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', WBTC: '0x0000000000000000000000000000000000000000', PegBTC: '0x0000000000000000000000000000000000000000' },
     facilitator: 'https://api.x402.goat.network',
   },
   'tempo-testnet': {

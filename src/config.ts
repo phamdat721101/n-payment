@@ -31,5 +31,13 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
     throw new NPaymentError('GOAT chains require goat credentials', 'INVALID_CONFIG', 'Pass goat: { apiKey, apiSecret, merchantId }');
   }
 
+  if (input.btcLending && !hasGoatChain) {
+    throw new NPaymentError('btcLending requires a GOAT chain', 'INVALID_CONFIG', 'Add goat-mainnet or goat-testnet to chains');
+  }
+
+  if (input.btcLending && !input.btcLending.vaultAddress) {
+    throw new NPaymentError('btcLending.vaultAddress is required', 'INVALID_CONFIG', 'Pass btcLending: { vaultAddress: "0x..." }');
+  }
+
   return { protocol: 'auto', ...input };
 }

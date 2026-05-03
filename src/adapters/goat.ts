@@ -3,6 +3,7 @@ import type { OWSWallet } from '../ows/wallet.js';
 import { GoatX402Client } from '../goat/client.js';
 import { CHAINS } from '../chains.js';
 import { NPaymentError } from '../errors.js';
+import { BtcLendingVault } from '../goat/lending.js';
 
 /**
  * GOAT Network x402 adapter with full order lifecycle.
@@ -12,10 +13,12 @@ export class GoatAdapter implements PaymentAdapter {
   readonly protocol = 'goat';
   private goatClient: GoatX402Client;
   private wallet: OWSWallet;
+  private lendingVault?: BtcLendingVault;
 
-  constructor(config: GoatCredentials, wallet: OWSWallet) {
+  constructor(config: GoatCredentials, wallet: OWSWallet, lendingVault?: BtcLendingVault) {
     this.goatClient = new GoatX402Client(config);
     this.wallet = wallet;
+    this.lendingVault = lendingVault;
   }
 
   detect(_response: Response): boolean {
@@ -30,6 +33,12 @@ export class GoatAdapter implements PaymentAdapter {
     const amountWei = accepts.maxAmountRequired ?? '10000';
 
     const fromAddress = await this.wallet.getAddress(chainId);
+
+    let positionTxHash: string | undefined;
+    if (this.lendingVault) {
+      const collateral = this.lendingVault.estimateCollateral(amountWei);
+      positionTxHash = await this.lendingVault.lockAndBorrow(collateral, amountWei, chainId);
+    }
 
     const order = await this.goatClient.createOrder({
       dappOrderId: `npay-${Date.now()}`,
@@ -52,7 +61,14 @@ export class GoatAdapter implements PaymentAdapter {
     const finalStatus = await this.goatClient.pollUntilTerminal(order.orderId, 120_000, 2_000);
 
     if (finalStatus === 'FAILED' || finalStatus === 'EXPIRED' || finalStatus === 'CANCELLED') {
+      if (positionTxHash && this.lendingVault) {
+        try { await this.lendingVault.repayAndUnlock(positionTxHash, chainId); } catch { /* best-effort */ }
+      }
       throw new NPaymentError(`GOAT order ${finalStatus}: ${order.orderId}`, 'GOAT_ORDER_FAILED');
+    }
+
+    if (positionTxHash && this.lendingVault) {
+      await this.lendingVault.repayAndUnlock(positionTxHash, chainId);
     }
 
     const proof = await this.goatClient.getOrderProof(order.orderId);

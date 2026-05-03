@@ -2,7 +2,7 @@
 export type {
   ProtocolType, ChainKey, ChainConfig, NPaymentConfig, GoatCredentials,
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
-  OWSConfig,
+  OWSConfig, BtcLendingConfig,
 } from './types.js';
 
 // ─── OWS ─────────────────────────────────────────────────────────────────────
@@ -28,3 +28,6 @@ export { GoatX402Client } from './goat/client.js';
 export { GoatIdentity, GOAT_IDENTITY_REGISTRY, GOAT_REPUTATION_REGISTRY } from './goat/identity.js';
 export { signGoatRequest } from './goat/auth.js';
 export type { GoatOrder, GoatProof, GoatCreateOrderParams, GoatOrderStatus } from './goat/types.js';
+
+// ─── BTC Lending ─────────────────────────────────────────────────────────────
+export { BtcLendingVault } from './goat/lending.js';

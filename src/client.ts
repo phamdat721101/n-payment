@@ -8,6 +8,7 @@ import { OWSWallet } from './ows/wallet.js';
 import { X402Adapter } from './adapters/x402.js';
 import { MppAdapter } from './adapters/mpp.js';
 import { GoatAdapter } from './adapters/goat.js';
+import { BtcLendingVault } from './goat/lending.js';
 
 export class PaymentClient {
   private adapters: PaymentAdapter[] = [];
@@ -27,7 +28,10 @@ export class PaymentClient {
 
     if (hasX402 && proto !== 'mpp') this.adapters.push(new X402Adapter(this.wallet));
     if (hasMpp && proto !== 'x402') this.adapters.push(new MppAdapter(this.wallet));
-    if (hasGoat && config.goat) this.adapters.push(new GoatAdapter(config.goat, this.wallet));
+    if (hasGoat && config.goat) {
+      const vault = config.btcLending ? new BtcLendingVault(this.wallet, config.btcLending) : undefined;
+      this.adapters.push(new GoatAdapter(config.goat, this.wallet, vault));
+    }
   }
 
   async fetchWithPayment(url: string, init?: RequestInit): Promise<Response> {

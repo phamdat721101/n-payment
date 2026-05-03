@@ -5,7 +5,7 @@
     "chains": ["eip155:2345", "eip155:48816"],
     "maxTransactionValue": "50000",
     "dailySpendingLimit": "500000",
-    "tokenAllowlist": ["USDC", "USDT"]
+    "tokenAllowlist": ["USDC", "USDT", "WBTC", "PegBTC"]
   },
   "action": "deny"
 }

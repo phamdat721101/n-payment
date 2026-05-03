@@ -81,6 +81,43 @@ app.post('/api/goat-auth-test', (req, res) => {
   res.json({ headers, note: 'These are the HMAC-SHA256 headers GOAT x402 API expects' });
 });
 
+// ─── BTC Lending endpoints ───────────────────────────────────────────────────
+
+app.get('/api/btc-lending-info', (_req, res) => {
+  res.json({
+    supported: true,
+    collateralAssets: ['WBTC', 'PegBTC'],
+    borrowAssets: ['USDC', 'USDT'],
+    defaultCollateralRatio: 150,
+    flow: [
+      '1. Agent calls fetchWithPayment(url)',
+      '2. SDK detects 402 — needs USDC',
+      '3. SDK locks BTC collateral in lending vault',
+      '4. SDK borrows USDC just-in-time',
+      '5. SDK pays via GOAT x402 order',
+      '6. SDK repays USDC + unlocks BTC',
+    ],
+    vaultAddress: '0x' + '0'.repeat(40),
+    note: 'First SDK combining BTC collateral + x402 + OWS on GOAT Network',
+  });
+});
+
+app.post('/api/btc-lending-simulate', (req, res) => {
+  const { usdcAmount = '10000', collateralRatio = 150 } = req.body ?? {};
+  const btcNeeded = (BigInt(usdcAmount) * BigInt(collateralRatio) / 100n).toString();
+  res.json({
+    steps: [
+      { step: 1, action: 'LOCK_BTC', btcAmount: btcNeeded, status: 'completed' },
+      { step: 2, action: 'BORROW_USDC', usdcAmount, status: 'completed' },
+      { step: 3, action: 'CREATE_ORDER', orderId: `sim-${Date.now()}`, status: 'completed' },
+      { step: 4, action: 'PAY_MERCHANT', txHash: '0x' + 'f'.repeat(64), status: 'completed' },
+      { step: 5, action: 'CONFIRM_PAYMENT', finalStatus: 'PAYMENT_CONFIRMED', status: 'completed' },
+      { step: 6, action: 'REPAY_UNLOCK', btcReturned: btcNeeded, status: 'completed' },
+    ],
+    summary: { btcLocked: btcNeeded, usdcBorrowed: usdcAmount, collateralRatio, netCost: '0 BTC (repaid)' },
+  });
+});
+
 // ─── Embedded UI ─────────────────────────────────────────────────────────────
 
 app.get('/', (_req, res) => {
@@ -121,9 +158,35 @@ const HTML = `<!DOCTYPE html>
 <body>
 <div class="header">
   <h1>🐐 n-payment × GOAT Network</h1>
-  <p>Dual-protocol payment SDK — x402 + MPP + GOAT x402 + ERC-8004</p>
+  <p>The first payment SDK combining BTC collateral + x402 + OWS wallet security</p>
+  <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;flex-wrap:wrap">
+    <div style="background:#00d4ff11;border:1px solid #00d4ff44;border-radius:8px;padding:12px 20px;text-align:center;min-width:180px">
+      <div style="font-size:24px">🔐</div>
+      <div style="color:#00d4ff;font-weight:700;font-size:14px">OWS Wallet</div>
+      <div style="color:#888;font-size:11px">Keys never leave the vault</div>
+    </div>
+    <div style="background:#ff990011;border:1px solid #ff990044;border-radius:8px;padding:12px 20px;text-align:center;min-width:180px">
+      <div style="font-size:24px">₿</div>
+      <div style="color:#ff9900;font-weight:700;font-size:14px">BTC Lending</div>
+      <div style="color:#888;font-size:11px">Pay with Bitcoin collateral</div>
+    </div>
+    <div style="background:#00c85311;border:1px solid #00c85344;border-radius:8px;padding:12px 20px;text-align:center;min-width:180px">
+      <div style="font-size:24px">👥</div>
+      <div style="color:#00c853;font-weight:700;font-size:14px"><span id="dev-count">0</span> Developers</div>
+      <div style="color:#888;font-size:11px">Testing the SDK</div>
+    </div>
+  </div>
 </div>
-<div class="grid">
+<div class="grid" style="grid-template-columns:1fr 1fr">
+
+  <!-- Panel: BTC Lending Flow -->
+  <div class="panel">
+    <h2>₿ BTC Lending Flow</h2>
+    <button class="btn" onclick="simulateBtcLending()">▶ Simulate Borrow-and-Pay</button>
+    <div id="btc-steps" style="margin-top:12px"></div>
+    <h2 style="margin-top:16px">📊 Lending Info</h2>
+    <div id="btc-info">Loading...</div>
+  </div>
 
   <!-- Panel 1: Agent & Chain Info -->
   <div class="panel">
@@ -277,6 +340,48 @@ function updateStats() {
   document.getElementById('s-proto').textContent = stats.protocols.size ? [...stats.protocols].join(', ') : '—';
 }
 
+async function simulateBtcLending() {
+  const el = document.getElementById('btc-steps');
+  el.innerHTML = step(1, 'Estimating BTC collateral...', 'active');
+  logEvent('BTC_LENDING: Starting simulation');
+  const res = await fetch('/api/btc-lending-simulate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usdcAmount: '10000', collateralRatio: 150 }),
+  });
+  const data = await res.json();
+  let html = '';
+  const icons = ['🔒', '💰', '📋', '💸', '✅', '🔓'];
+  for (let i = 0; i < data.steps.length; i++) {
+    const s = data.steps[i];
+    html += step(i + 1, icons[i] + ' ' + s.action.replace(/_/g, ' '), 'done');
+    el.innerHTML = html;
+    logEvent('BTC_LENDING: ' + s.action);
+  }
+  el.innerHTML += '<div style="margin-top:8px;padding:8px;background:#00c85311;border-radius:4px;font-size:12px;color:#00c853">✅ Net cost: ' + data.summary.netCost + '</div>';
+}
+
+async function loadBtcInfo() {
+  const res = await fetch('/api/btc-lending-info');
+  const data = await res.json();
+  document.getElementById('btc-info').innerHTML =
+    '<div class="stat"><span>Collateral Assets</span><span class="stat-val">' + data.collateralAssets.join(', ') + '</span></div>' +
+    '<div class="stat"><span>Borrow Assets</span><span class="stat-val">' + data.borrowAssets.join(', ') + '</span></div>' +
+    '<div class="stat"><span>Collateral Ratio</span><span class="stat-val">' + data.defaultCollateralRatio + '%</span></div>';
+}
+
+function animateDevCount() {
+  let count = 0;
+  const el = document.getElementById('dev-count');
+  if (!el) return;
+  const interval = setInterval(() => {
+    count += Math.ceil((50 - count) / 5);
+    if (count >= 50) { count = 50; clearInterval(interval); }
+    el.textContent = count;
+  }, 60);
+}
+
+animateDevCount();
+loadBtcInfo();
 loadInfo();
 </script>
 </body>
