@@ -7,7 +7,8 @@ export type ChainKey =
   | 'arbitrum-sepolia'
   | 'goat-testnet'
   | 'goat-mainnet'
-  | 'tempo-testnet';
+  | 'tempo-testnet'
+  | 'base-mainnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -84,4 +85,63 @@ export interface PaywallConfig {
   routes: Record<string, PaywallRouteConfig>;
   x402?: { facilitatorUrl?: string };
   mpp?: { currency?: string; recipient?: string };
+}
+
+// ─── Discovery (Bazaar) ──────────────────────────────────────────────────────
+
+export interface BazaarResource {
+  resource: string;
+  type: 'http' | 'mcp';
+  description?: string;
+  accepts: Array<{
+    scheme: string;
+    network: string;
+    asset: string;
+    maxAmountRequired: string;
+    payTo: string;
+  }>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BazaarSearchResult {
+  resources: BazaarResource[];
+  total: number;
+}
+
+// ─── Off-Ramp ────────────────────────────────────────────────────────────────
+
+export interface OffRampAdapter {
+  readonly provider: string;
+  getSupportedCurrencies(): Promise<string[]>;
+  getQuote(params: OffRampQuoteParams): Promise<OffRampQuote>;
+  withdraw(params: OffRampWithdrawParams): Promise<OffRampReceipt>;
+}
+
+export interface OffRampQuoteParams {
+  amount: string;
+  token: string;
+  chain: ChainKey;
+  fiatCurrency: string;
+}
+
+export interface OffRampQuote {
+  fiatAmount: string;
+  fiatCurrency: string;
+  feePercent: number;
+  estimatedDays: number;
+}
+
+export interface OffRampWithdrawParams {
+  amount: string;
+  token: string;
+  chain: ChainKey;
+  destination: { type: 'bank_account' | 'card' | 'mobile_money'; id: string };
+}
+
+export interface OffRampReceipt {
+  id: string;
+  status: 'processing' | 'completed' | 'failed';
+  fiatAmount: string;
+  fiatCurrency: string;
+  estimatedArrival: string;
 }

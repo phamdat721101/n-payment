@@ -45,6 +45,15 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     protocols: ['mpp'],
     tokens: { PathUSD: '0x20c0000000000000000000000000000000000000' },
   },
+  'base-mainnet': {
+    chainId: 8453,
+    caip2: 'eip155:8453',
+    name: 'Base',
+    rpcUrl: 'https://mainnet.base.org',
+    protocols: ['x402'],
+    tokens: { USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
+    facilitator: 'https://api.cdp.coinbase.com/platform/v2/x402',
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

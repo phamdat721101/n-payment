@@ -4,6 +4,10 @@ export type {
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
   OWSConfig, BtcLendingConfig,
 } from './types.js';
+export type {
+  BazaarResource, BazaarSearchResult,
+  OffRampAdapter, OffRampQuoteParams, OffRampQuote, OffRampWithdrawParams, OffRampReceipt,
+} from './types.js';
 
 // ─── OWS ─────────────────────────────────────────────────────────────────────
 export { OWSWallet } from './ows/wallet.js';
@@ -31,3 +35,10 @@ export type { GoatOrder, GoatProof, GoatCreateOrderParams, GoatOrderStatus } fro
 
 // ─── BTC Lending ─────────────────────────────────────────────────────────────
 export { BtcLendingVault } from './goat/lending.js';
+
+// ─── Bazaar (Discovery) ──────────────────────────────────────────────────────
+export { BazaarClient, createBazaarClient, MOCK_CATALOG } from './bazaar/index.js';
+export type { BazaarClientConfig } from './bazaar/index.js';
+
+// ─── Off-Ramp ────────────────────────────────────────────────────────────────
+export { OffRampClient, MockMoonPayAdapter } from './offramp/index.js';

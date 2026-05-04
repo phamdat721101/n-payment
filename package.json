@@ -1,7 +1,7 @@
 {
   "name": "n-payment",
-  "version": "0.2.0",
-  "description": "Dual-protocol payment SDK for Web3 — unifies x402 and MPP behind a single fetchWithPayment() call",
+  "version": "0.4.0",
+  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402 with service discovery, off-ramp, and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,7 +13,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -30,12 +33,22 @@
     "stablecoin",
     "USDC",
     "ai-agents",
-    "micropayments"
+    "micropayments",
+    "bazaar",
+    "service-discovery",
+    "off-ramp",
+    "base",
+    "goat-network",
+    "ows"
   ],
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
+  "repository": { "type": "git", "url": "https://github.com/phamdat/n-payment" },
+  "homepage": "https://github.com/phamdat/n-payment#readme",
+  "author": "phamdat",
+  "engines": { "node": ">=18" },
   "dependencies": {
     "viem": "^2.21.0"
   },
