@@ -17,7 +17,8 @@ export function owsExec(cliPath: string, args: string[]): Promise<OWSExecResult>
     execFile(cliPath, args, { timeout: 120_000 }, (err, stdout, stderr) => {
       if (!err) {
         try {
-          resolve(JSON.parse(stdout.trim()));
+          const parsed = JSON.parse(stdout.trim());
+          resolve(parsed.ok !== undefined ? parsed : { ok: true, data: parsed });
         } catch {
           resolve({ ok: true, data: stdout.trim() });
         }

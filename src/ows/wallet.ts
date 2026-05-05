@@ -53,7 +53,7 @@ export class OWSWallet {
   }
 
   async payX402(url: string, method = 'GET'): Promise<string> {
-    const args = ['pay', 'request', '--wallet', this.wallet, '--url', url];
+    const args = ['pay', 'request', '--wallet', this.wallet, url];
     if (method !== 'GET') args.push('--method', method);
     const result = await owsExec(this.cliPath, args);
     if (!result.ok) {
