@@ -48,15 +48,12 @@ export class GoatAdapter implements PaymentAdapter {
       amountWei,
     });
 
-    // ERC-20 transfer(address,uint256) to payToAddress
-    const paddedTo = order.payToAddress.slice(2).toLowerCase().padStart(64, '0');
-    const paddedAmt = BigInt(amountWei).toString(16).padStart(64, '0');
-    const transferData = `0xa9059cbb${paddedTo}${paddedAmt}`;
-
-    const { txHash } = await this.wallet.signTransaction({
-      to: CHAINS[chainKey].tokens.USDC ?? order.payToAddress,
-      data: transferData,
-    }, chainId);
+    const { txHash } = await this.wallet.transferERC20(
+      order.payToAddress,
+      CHAINS[chainKey].tokens.USDC ?? order.payToAddress,
+      BigInt(amountWei),
+      chainId,
+    );
 
     const finalStatus = await this.goatClient.pollUntilTerminal(order.orderId, 120_000, 2_000);
 

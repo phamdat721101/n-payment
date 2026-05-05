@@ -41,6 +41,7 @@ export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
   protocol?: ProtocolType;
+  autoFaucet?: boolean;
   x402?: { facilitatorUrl?: string };
   mpp?: { currency?: string };
   goat?: GoatCredentials;

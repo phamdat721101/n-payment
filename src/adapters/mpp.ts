@@ -28,7 +28,7 @@ export class MppAdapter implements PaymentAdapter {
       },
       async signTransaction(tx: any) {
         const result = await w.signTransaction(tx, 2);
-        return result.signedTx as `0x${string}`;
+        return result.txHash as `0x${string}`;
       },
       type: 'local' as const,
       source: 'custom' as const,

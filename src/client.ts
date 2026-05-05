@@ -26,7 +26,10 @@ export class PaymentClient {
     const hasMpp = getChainsForProtocol(config.chains, 'mpp').length > 0;
     const hasGoat = getChainsForProtocol(config.chains, 'goat').length > 0;
 
-    if (hasX402 && proto !== 'mpp') this.adapters.push(new X402Adapter(this.wallet));
+    if (hasX402 && proto !== 'mpp') {
+      const x402Chain = getChainsForProtocol(config.chains, 'x402')[0];
+      this.adapters.push(new X402Adapter(this.wallet, x402Chain));
+    }
     if (hasMpp && proto !== 'x402') this.adapters.push(new MppAdapter(this.wallet));
     if (hasGoat && config.goat) {
       const vault = config.btcLending ? new BtcLendingVault(this.wallet, config.btcLending) : undefined;

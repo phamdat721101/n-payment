@@ -3,15 +3,6 @@ import { CHAINS } from './chains.js';
 import { NPaymentError } from './errors.js';
 
 export function createConfig(input: NPaymentConfig): NPaymentConfig {
-  // Migration guard: detect old privateKey config
-  if ('privateKey' in input && !(input as any).ows) {
-    throw new NPaymentError(
-      'privateKey is no longer supported in v0.2. Use ows: { wallet: "name" } instead.',
-      'CONFIG_MIGRATION',
-      'See README.md migration guide. Install OWS: curl -fsSL https://docs.openwallet.sh/install.sh | bash',
-    );
-  }
-
   if (!input.chains?.length) {
     throw new NPaymentError('At least one chain required', 'INVALID_CONFIG', 'Pass chains: ["base-sepolia"]');
   }
@@ -24,6 +15,10 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
 
   if (!input.ows?.wallet) {
     throw new NPaymentError('ows.wallet is required', 'INVALID_CONFIG', 'Pass ows: { wallet: "my-agent" }');
+  }
+
+  if (!input.ows?.privateKey) {
+    throw new NPaymentError('ows.privateKey is required', 'INVALID_CONFIG', 'Pass ows: { wallet: "my-agent", privateKey: "0x..." }');
   }
 
   const hasGoatChain = input.chains.some((c) => CHAINS[c].protocols.includes('goat'));

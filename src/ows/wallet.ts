@@ -1,6 +1,10 @@
-import { owsExec } from './exec.js';
-import { NPaymentError } from '../errors.js';
+import { privateKeyToAccount } from 'viem/accounts';
+import type { Hex } from 'viem';
+import { ViemTransactor } from '../transactor.js';
+import type { ChainConfig } from '../types.js';
+import { CHAINS } from '../chains.js';
 import type { OWSConfig, OWSSignResult } from './types.js';
+import { NPaymentError } from '../errors.js';
 
 export interface TransactionRequest {
   to: string;
@@ -10,56 +14,52 @@ export interface TransactionRequest {
 
 export class OWSWallet {
   private wallet: string;
-  private cliPath: string;
+  private privateKey: Hex;
+  private autoFaucet?: boolean;
+  private transactors = new Map<number, ViemTransactor>();
 
   constructor(config: OWSConfig) {
     this.wallet = config.wallet;
-    this.cliPath = config.cliPath ?? 'ows';
+    this.privateKey = config.privateKey as Hex;
+    this.autoFaucet = config.autoFaucet;
   }
 
-  async getAddress(chainId: number): Promise<string> {
-    const result = await owsExec(this.cliPath, [
-      'fund', 'balance', '--wallet', this.wallet, '--chain', String(chainId),
-    ]);
-    if (!result.ok) {
-      throw new NPaymentError(result.error ?? 'Failed to get address', result.code ?? 'OWS_ERROR', result.hint);
+  private getTransactor(chainId: number): ViemTransactor {
+    let t = this.transactors.get(chainId);
+    if (!t) {
+      const chain = Object.values(CHAINS).find((c: ChainConfig) => c.chainId === chainId);
+      if (!chain) throw new NPaymentError(`Chain ${chainId} not found`, 'CHAIN_NOT_FOUND');
+      t = new ViemTransactor(chain, this.privateKey, this.autoFaucet);
+      this.transactors.set(chainId, t);
     }
-    const data = result.data as any;
-    return typeof data === 'object' ? data.address : String(data).match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '';
+    return t;
+  }
+
+  getAddress(chainId: number): string {
+    return this.getTransactor(chainId).getAddress();
+  }
+
+  async getBalance(token: string, chainId: number): Promise<bigint> {
+    return this.getTransactor(chainId).getTokenBalance(this.getAddress(chainId), token);
   }
 
   async signTransaction(tx: TransactionRequest, chainId: number): Promise<OWSSignResult> {
-    const txJson = JSON.stringify({ to: tx.to, value: tx.value, data: tx.data, type: 2 });
-    const result = await owsExec(this.cliPath, [
-      'sign', 'tx', '--wallet', this.wallet, '--chain', String(chainId), '--tx', txJson,
-    ]);
-    if (!result.ok) {
-      throw new NPaymentError(result.error ?? 'Sign failed', result.code ?? 'OWS_ERROR', result.hint);
-    }
-    const data = result.data as any;
-    const signedTx = typeof data === 'object' ? data.signedTx : String(data);
-    const txHash = typeof data === 'object' ? data.txHash : signedTx.match(/0x[a-fA-F0-9]{64}/)?.[0] ?? '';
-    return { signedTx, txHash };
+    const result = await this.getTransactor(chainId).sendTransaction({ to: tx.to, value: tx.value ? BigInt(tx.value) : undefined, data: tx.data });
+    return { txHash: result.txHash, blockNumber: result.blockNumber };
+  }
+
+  async transferERC20(to: string, token: string, amount: bigint, chainId: number): Promise<OWSSignResult> {
+    const result = await this.getTransactor(chainId).transferERC20(to, token, amount);
+    return { txHash: result.txHash, blockNumber: result.blockNumber };
   }
 
   async signMessage(message: string): Promise<string> {
-    const result = await owsExec(this.cliPath, [
-      'sign', 'message', '--wallet', this.wallet, '--message', message,
-    ]);
-    if (!result.ok) {
-      throw new NPaymentError(result.error ?? 'Sign message failed', result.code ?? 'OWS_ERROR', result.hint);
-    }
-    return String((result.data as any)?.signature ?? result.data);
+    const account = privateKeyToAccount(this.privateKey);
+    return account.signMessage({ message });
   }
 
-  async payX402(url: string, method = 'GET'): Promise<string> {
-    const args = ['pay', 'request', '--wallet', this.wallet, url];
-    if (method !== 'GET') args.push('--method', method);
-    const result = await owsExec(this.cliPath, args);
-    if (!result.ok) {
-      throw new NPaymentError(result.error ?? 'Payment failed', result.code ?? 'PAYMENT_FAILED', result.hint);
-    }
-    return JSON.stringify(result.data);
+  async payX402(_url: string, _method?: string): Promise<string> {
+    throw new NPaymentError('payX402 requires direct adapter usage', 'NOT_IMPLEMENTED');
   }
 
   get walletName(): string { return this.wallet; }

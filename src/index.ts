@@ -11,7 +11,7 @@ export type {
 
 // ─── OWS ─────────────────────────────────────────────────────────────────────
 export { OWSWallet } from './ows/wallet.js';
-export type { OWSSignResult, OWSExecResult } from './ows/types.js';
+export type { OWSSignResult } from './ows/types.js';
 export type { TransactionRequest } from './ows/wallet.js';
 
 // ─── Core ────────────────────────────────────────────────────────────────────
@@ -42,3 +42,10 @@ export type { BazaarClientConfig } from './bazaar/index.js';
 
 // ─── Off-Ramp ────────────────────────────────────────────────────────────────
 export { OffRampClient, MockMoonPayAdapter } from './offramp/index.js';
+
+// ─── Faucet ──────────────────────────────────────────────────────────────────
+export { TestnetFaucet } from './faucet.js';
+
+// ─── Transactor ──────────────────────────────────────────────────────────────
+export { ViemTransactor } from './transactor.js';
+export type { TransactionResult } from './transactor.js';

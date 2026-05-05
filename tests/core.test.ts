@@ -40,7 +40,7 @@ describe('detectProtocol', () => {
 // ─── createConfig ────────────────────────────────────────────────────────────
 
 describe('createConfig', () => {
-  const validOws = { wallet: 'test-agent' };
+  const validOws = { wallet: 'test-agent', privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' };
 
   it('creates valid config with defaults', () => {
     const cfg = createConfig({ chains: ['base-sepolia'], ows: validOws });
@@ -60,9 +60,8 @@ describe('createConfig', () => {
     expect(() => createConfig({ chains: ['base-sepolia'], ows: { wallet: '' } })).toThrow('ows.wallet');
   });
 
-  it('throws migration error for old privateKey config', () => {
-    const oldConfig = { chains: ['base-sepolia'], privateKey: '0x123' };
-    expect(() => createConfig(oldConfig as any)).toThrow('no longer supported');
+  it('throws on missing ows.privateKey', () => {
+    expect(() => createConfig({ chains: ['base-sepolia'], ows: { wallet: 'test', privateKey: '' } })).toThrow('ows.privateKey');
   });
 
   it('throws when goat chain used without credentials', () => {
