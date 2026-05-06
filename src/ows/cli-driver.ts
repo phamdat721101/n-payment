@@ -26,8 +26,9 @@ export async function createOWSDriver(cliPath?: string): Promise<OWSDriver | nul
         return account?.address ?? wallet.accounts[0]?.address ?? '';
       },
       async signTransaction(walletName, chainId, tx) {
-        const result = await ows.signAndSend(walletName, `eip155:${chainId}`, tx);
-        return result.hash;
+        const chainConfig = Object.values(CHAINS).find((c: any) => c.chainId === chainId) as any;
+        const result = await ows.signAndSend(walletName, `eip155:${chainId}`, JSON.stringify(tx), null, null, chainConfig?.rpcUrl);
+        return result.txHash;
       },
       async signMessage(walletName, message) {
         const result = await ows.signMessage(walletName, 'evm', message);
@@ -56,8 +57,9 @@ export async function createOWSDriver(cliPath?: string): Promise<OWSDriver | nul
       },
       async transferERC20(walletName, chainId, to, token, amount) {
         const data = '0xa9059cbb' + to.slice(2).padStart(64, '0') + amount.toString(16).padStart(64, '0');
-        const result = await ows.signAndSend(walletName, `eip155:${chainId}`, { to: token, data });
-        return result.hash;
+        const chainConfig = Object.values(CHAINS).find((c: any) => c.chainId === chainId) as any;
+        const result = await ows.signAndSend(walletName, `eip155:${chainId}`, JSON.stringify({ to: token, data }), null, null, chainConfig?.rpcUrl);
+        return result.txHash;
       },
     };
     return cachedDriver;
