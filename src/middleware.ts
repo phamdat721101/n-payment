@@ -16,7 +16,7 @@ export function createPaywall(config: PaywallConfig) {
     if (!route) return next();
 
     // ── Check x402 payment ──────────────────────────────────────────────
-    if (req.headers['payment-signature'] && route.x402) {
+    if ((req.headers['payment-signature'] || req.headers['x-payment-tx']) && route.x402) {
       // In production: verify via facilitator POST /verify
       // For v0.1.0: trust the header (facilitator verification is server-side concern)
       return next();
