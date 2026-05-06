@@ -60,8 +60,9 @@ describe('createConfig', () => {
     expect(() => createConfig({ chains: ['base-sepolia'], ows: { wallet: '' } })).toThrow('ows.wallet');
   });
 
-  it('throws on missing ows.privateKey', () => {
-    expect(() => createConfig({ chains: ['base-sepolia'], ows: { wallet: 'test', privateKey: '' } })).toThrow('ows.privateKey');
+  it('accepts config without ows.privateKey (dual-mode OWS)', () => {
+    const cfg = createConfig({ chains: ['base-sepolia'], ows: { wallet: 'test' } });
+    expect(cfg.ows.wallet).toBe('test');
   });
 
   it('throws when goat chain used without credentials', () => {
