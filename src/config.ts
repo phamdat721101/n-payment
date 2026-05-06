@@ -17,9 +17,8 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
     throw new NPaymentError('ows.wallet is required', 'INVALID_CONFIG', 'Pass ows: { wallet: "my-agent" }');
   }
 
-  if (!input.ows?.privateKey) {
-    throw new NPaymentError('ows.privateKey is required', 'INVALID_CONFIG', 'Pass ows: { wallet: "my-agent", privateKey: "0x..." }');
-  }
+  // Dual-mode: privateKey is optional if OWS SDK is available
+  // Validation of signer availability happens at runtime in OWSWallet
 
   const hasGoatChain = input.chains.some((c) => CHAINS[c].protocols.includes('goat'));
   if (hasGoatChain && !input.goat) {

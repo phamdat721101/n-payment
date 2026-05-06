@@ -1,7 +1,9 @@
 export interface OWSConfig {
   wallet: string;
-  privateKey: string;
+  privateKey?: string;
   autoFaucet?: boolean;
+  cliPath?: string;
+  policyId?: string;
 }
 
 export interface OWSSignResult {
