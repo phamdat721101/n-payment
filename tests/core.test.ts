@@ -105,13 +105,15 @@ describe('createConfig', () => {
 // ─── chains ──────────────────────────────────────────────────────────────────
 
 describe('chains', () => {
-  it('has all 6 chains', () => {
-    expect(Object.keys(CHAINS)).toHaveLength(6);
+  it('has all 7 chains', () => {
+    expect(Object.keys(CHAINS)).toHaveLength(7);
   });
 
   it('getChain returns correct config', () => {
     expect(getChain('base-sepolia').chainId).toBe(84532);
     expect(getChain('goat-mainnet').chainId).toBe(2345);
+    expect(getChain('tempo-testnet').chainId).toBe(42431);
+    expect(getChain('tempo-mainnet').chainId).toBe(4217);
   });
 
   it('getChainsForProtocol filters correctly', () => {
@@ -167,6 +169,7 @@ describe('createPaywall', () => {
     expect(res._status).toBe(402);
     expect(res._headers['payment-required']).toBeDefined();
     expect(res._headers['www-authenticate']).toContain('Payment');
+    expect(res._headers['www-authenticate']).toContain('intent="charge"');
     expect(res._body.protocols).toEqual(['x402', 'mpp']);
   });
 

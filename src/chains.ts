@@ -38,12 +38,26 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     facilitator: 'https://api.x402.goat.network',
   },
   'tempo-testnet': {
-    chainId: 2,
-    caip2: 'tempo:testnet',
+    chainId: 42431,
+    caip2: 'eip155:42431',
     name: 'Tempo Testnet',
-    rpcUrl: 'https://rpc.testnet.tempo.xyz',
+    rpcUrl: 'https://rpc.moderato.tempo.xyz',
     protocols: ['mpp'],
-    tokens: { PathUSD: '0x20c0000000000000000000000000000000000000' },
+    tokens: {
+      PathUSD: '0x20c0000000000000000000000000000000000000',
+      USDC: '0x20C000000000000000000000b9537d11c60E8b50',
+    },
+  },
+  'tempo-mainnet': {
+    chainId: 4217,
+    caip2: 'eip155:4217',
+    name: 'Tempo',
+    rpcUrl: 'https://rpc.tempo.xyz',
+    protocols: ['mpp'],
+    tokens: {
+      PathUSD: '0x20c0000000000000000000000000000000000000',
+      USDC: '0x20C000000000000000000000b9537d11c60E8b50',
+    },
   },
   'base-mainnet': {
     chainId: 8453,

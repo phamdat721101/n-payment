@@ -97,5 +97,11 @@ export class OWSWallet {
     throw new NPaymentError('payX402 requires direct adapter usage', 'NOT_IMPLEMENTED');
   }
 
+  /** Returns a viem LocalAccount if privateKey is available, null otherwise. */
+  getAccount(): ReturnType<typeof privateKeyToAccount> | null {
+    if (!this.privateKey) return null;
+    return privateKeyToAccount(this.privateKey);
+  }
+
   get walletName_(): string { return this.walletName; }
 }

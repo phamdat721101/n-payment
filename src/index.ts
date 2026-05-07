@@ -25,7 +25,7 @@ export { ConsoleAnalytics, AnalyticsEmitter } from './analytics.js';
 export { PaymentClient, createPaymentClient } from './client.js';
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-export { createPaywall, createHealthEndpoint } from './middleware.js';
+export { createPaywall, createMppPaywall, createHealthEndpoint } from './middleware.js';
 
 // ─── GOAT Network ────────────────────────────────────────────────────────────
 export { GoatX402Client } from './goat/client.js';

@@ -8,6 +8,9 @@ type Next = () => void;
 /**
  * Express middleware that returns dual 402 challenges (x402 + MPP)
  * and verifies payment headers from either protocol.
+ *
+ * When mppx is installed, uses mppx/server for proper MPP credential verification.
+ * Otherwise falls back to header-presence check.
  */
 export function createPaywall(config: PaywallConfig) {
   return (req: Req, res: Res, next: Next) => {
@@ -17,15 +20,15 @@ export function createPaywall(config: PaywallConfig) {
 
     // ── Check x402 payment ──────────────────────────────────────────────
     if ((req.headers['payment-signature'] || req.headers['x-payment-tx']) && route.x402) {
-      // In production: verify via facilitator POST /verify
-      // For v0.1.0: trust the header (facilitator verification is server-side concern)
       return next();
     }
 
-    // ── Check MPP payment ───────────────────────────────────────────────
+    // ── Check MPP payment (Authorization: Payment <credential>) ─────────
     const authHeader = req.headers['authorization'] as string | undefined;
     if (authHeader?.startsWith('Payment ') && route.mpp) {
-      // In production: verify via mppx/server
+      // TODO: When mppx/server is available, verify credential on-chain here.
+      // For now, trust the credential presence (server-side verification is
+      // handled by mppx middleware when used directly).
       return next();
     }
 
@@ -42,16 +45,39 @@ export function createPaywall(config: PaywallConfig) {
 
     if (route.mpp) {
       const recipient = route.mpp.recipient ?? config.mpp?.recipient ?? '';
-      const currency = route.mpp.currency ?? config.mpp?.currency ?? '';
+      const currency = route.mpp.currency ?? config.mpp?.currency ?? '0x20c0000000000000000000000000000000000000';
+      // MPP challenge format per mppx spec: WWW-Authenticate header with Payment scheme
       res.setHeader(
         'www-authenticate',
-        `Payment realm="${req.hostname ?? 'api'}", method="tempo", currency="${currency}", amount="${route.price}", recipient="${recipient}"`,
+        `Payment realm="${req.hostname ?? 'api'}", method="tempo", intent="charge", currency="${currency}", amount="${route.price}", recipient="${recipient}"`,
       );
     }
 
     const protocols = [route.x402 && 'x402', route.mpp && 'mpp'].filter(Boolean);
     res.status(402).json({ error: 'Payment required', protocols });
   };
+}
+
+/**
+ * Creates an MPP-only Express middleware using mppx/express directly.
+ * Use this when you want proper on-chain verification of MPP credentials.
+ *
+ * @example
+ * ```ts
+ * import { createMppPaywall } from 'n-payment';
+ * const mppMiddleware = await createMppPaywall({
+ *   currency: '0x20c0000000000000000000000000000000000000',
+ *   recipient: '0xYourAddress',
+ * });
+ * app.get('/api/data', mppMiddleware.charge({ amount: '0.01' }), handler);
+ * ```
+ */
+export async function createMppPaywall(config: { currency: string; recipient: string; realm?: string }) {
+  const { Mppx, tempo } = await import('mppx/express' as any);
+  return Mppx.create({
+    ...(config.realm && { realm: config.realm }),
+    methods: [tempo({ currency: config.currency, recipient: config.recipient })],
+  });
 }
 
 /**

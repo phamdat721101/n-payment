@@ -8,6 +8,7 @@ export type ChainKey =
   | 'goat-testnet'
   | 'goat-mainnet'
   | 'tempo-testnet'
+  | 'tempo-mainnet'
   | 'base-mainnet';
 
 export interface ChainConfig {

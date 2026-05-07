@@ -1,8 +1,15 @@
 import type { PaymentAdapter } from '../types.js';
 import type { OWSWallet } from '../ows/wallet.js';
+import { NPaymentError } from '../errors.js';
 
 /**
- * MPP adapter — delegates to mppx with OWS-backed signing.
+ * MPP adapter — delegates to mppx with a proper viem account for real on-chain Tempo transactions.
+ *
+ * mppx handles all Tempo-specific logic internally:
+ * - Custom transaction serializers (Tempo chain)
+ * - Expiring transactions (validBefore)
+ * - Push/pull payment modes
+ * - EIP-712 typed data signing for proof challenges
  */
 export class MppAdapter implements PaymentAdapter {
   readonly protocol = 'mpp';
@@ -17,28 +24,19 @@ export class MppAdapter implements PaymentAdapter {
     if (this.mppxInstance) return this.mppxInstance;
 
     const { Mppx, tempo } = await import('mppx/client');
-    const address = await this.wallet.getAddress(2) as `0x${string}`;
-    const w = this.wallet;
+    const account = this.wallet.getAccount();
 
-    const owsAccount = {
-      address,
-      async signMessage({ message }: { message: any }) {
-        const msg = typeof message === 'string' ? message : typeof message?.raw === 'string' ? message.raw : String(message);
-        return w.signMessage(msg) as Promise<`0x${string}`>;
-      },
-      async signTransaction(tx: any) {
-        const result = await w.signTransaction(tx, 2);
-        return result.txHash as `0x${string}`;
-      },
-      type: 'local' as const,
-      source: 'custom' as const,
-      publicKey: '0x' as `0x${string}`,
-      signTypedData: async () => '0x' as `0x${string}`,
-    } as any;
+    if (!account) {
+      throw new NPaymentError(
+        'MPP requires a privateKey for Tempo transaction signing',
+        'MPP_NO_ACCOUNT',
+        'Provide ows.privateKey in config — mppx needs a full viem account for signTypedData and signTransaction',
+      );
+    }
 
     this.mppxInstance = Mppx.create({
       polyfill: false,
-      methods: [tempo({ account: owsAccount })],
+      methods: [tempo({ account })],
     });
     return this.mppxInstance;
   }
