@@ -30,7 +30,10 @@ export class PaymentClient {
       const x402Chain = getChainsForProtocol(config.chains, 'x402')[0];
       this.adapters.push(new X402Adapter(this.wallet, x402Chain));
     }
-    if (hasMpp && proto !== 'x402') this.adapters.push(new MppAdapter(this.wallet));
+    if (hasMpp && proto !== 'x402') {
+      const mppChain = getChainsForProtocol(config.chains, 'mpp')[0];
+      this.adapters.push(new MppAdapter(this.wallet, mppChain, config.autoFaucet));
+    }
     if (hasGoat && config.goat) {
       const vault = config.btcLending ? new BtcLendingVault(this.wallet, config.btcLending) : undefined;
       this.adapters.push(new GoatAdapter(config.goat, this.wallet, vault));

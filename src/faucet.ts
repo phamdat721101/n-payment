@@ -51,7 +51,34 @@ export class TestnetFaucet {
     return null;
   }
 
+  private isTempo(): boolean {
+    return this.chainConfig.chainId === 42431 || this.chainConfig.chainId === 4217;
+  }
+
+  async fundTempoIfNeeded(recipient: string): Promise<void> {
+    if (!this.isTestnet() || !this.isTempo()) return;
+    try {
+      const res = await fetch('https://docs.tempo.xyz/api/faucet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: recipient.toLowerCase() }),
+      });
+      if (!res.ok) {
+        // Fallback: tempo_fundAddress RPC
+        await fetch(this.chainConfig.rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tempo_fundAddress', params: [recipient] }),
+        });
+      }
+    } catch { console.warn('[n-payment] Tempo faucet unavailable'); }
+  }
+
   async ensureFunded(recipient: string, token: string): Promise<void> {
+    if (this.isTempo()) {
+      await this.fundTempoIfNeeded(recipient);
+      return;
+    }
     await this.fundGasIfNeeded(recipient);
     await this.fundUsdcIfNeeded(recipient, token);
   }
