@@ -25,7 +25,7 @@ One call. Any protocol. Keys never touch the agent. BTC as collateral.
 
 ```typescript
 const client = createPaymentClient({
-  chains: ['goat-mainnet'],
+  chains: ['goat-testnet'],
   ows: { wallet: 'my-agent' },
   goat: { apiKey, apiSecret, merchantId },
   btcLending: { vaultAddress: '0x...', collateralRatio: 150 },
@@ -47,7 +47,7 @@ const request = createPaymentRequest({
   merchant: '0xMerchantAddress',
   amount: '5.00',           // $5.00 USDC
   token: 'USDC',
-  chain: 'goat-mainnet',
+  chain: 'goat-testnet',
   label: 'Coffee Shop',
   memo: 'Order #1234',
 });
@@ -57,7 +57,7 @@ request.toURI();            // → ethereum:0xUSDC@2345/transfer?address=0xMerch
 request.toDeepLink();       // → opens wallet app directly
 
 // ─── Customer: scan QR and pay ───────────────────────────────────────────────
-const client = createPaymentClient({ chains: ['goat-mainnet'], ows: { wallet: 'my-wallet' } });
+const client = createPaymentClient({ chains: ['goat-testnet'], ows: { wallet: 'my-wallet' } });
 const receipt = await client.payRequest(request.toURI());
 // OWS-signed ERC-20 transfer → tx confirmed → receipt with txHash
 
@@ -70,7 +70,7 @@ const offramp = createOffRamp({
 const cashout = await offramp.withdraw({
   amount: '5.00',
   token: 'USDC',
-  chain: 'goat-mainnet',
+  chain: 'goat-testnet',
   destination: { type: 'bank_account', id: 'merchant-bank-id' },
 });
 // USDC → fiat in merchant's bank account
@@ -132,7 +132,7 @@ The `@2345` is the GOAT mainnet chain ID. The `/transfer` calls the ERC-20 `tran
 
 ```
 1. Merchant creates payment request
-   → createPaymentRequest({ amount: '5.00', token: 'USDC', chain: 'goat-mainnet' })
+   → createPaymentRequest({ amount: '5.00', token: 'USDC', chain: 'goat-testnet' })
 
 2. SDK generates ERC-681 URI + QR code
    → ethereum:0xUSDC@2345/transfer?address=0xMerchant&uint256=5e6

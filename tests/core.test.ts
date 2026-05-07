@@ -66,12 +66,12 @@ describe('createConfig', () => {
   });
 
   it('throws when goat chain used without credentials', () => {
-    expect(() => createConfig({ chains: ['goat-mainnet'], ows: validOws })).toThrow('GOAT chains require goat credentials');
+    expect(() => createConfig({ chains: ['goat-testnet'], ows: validOws })).toThrow('GOAT chains require goat credentials');
   });
 
   it('accepts goat chain with credentials', () => {
     const cfg = createConfig({
-      chains: ['goat-mainnet'], ows: validOws,
+      chains: ['goat-testnet'], ows: validOws,
       goat: { apiKey: 'k', apiSecret: 's', merchantId: 'm' },
     });
     expect(cfg.goat?.apiKey).toBe('k');
@@ -79,7 +79,7 @@ describe('createConfig', () => {
 
   it('accepts btcLending config with goat chain', () => {
     const cfg = createConfig({
-      chains: ['goat-mainnet'], ows: validOws,
+      chains: ['goat-testnet'], ows: validOws,
       goat: { apiKey: 'k', apiSecret: 's', merchantId: 'm' },
       btcLending: { vaultAddress: '0xVAULT' },
     });
@@ -95,7 +95,7 @@ describe('createConfig', () => {
 
   it('throws when btcLending missing vaultAddress', () => {
     expect(() => createConfig({
-      chains: ['goat-mainnet'], ows: validOws,
+      chains: ['goat-testnet'], ows: validOws,
       goat: { apiKey: 'k', apiSecret: 's', merchantId: 'm' },
       btcLending: { vaultAddress: '' },
     })).toThrow('vaultAddress is required');
@@ -105,13 +105,13 @@ describe('createConfig', () => {
 // ─── chains ──────────────────────────────────────────────────────────────────
 
 describe('chains', () => {
-  it('has all 7 chains', () => {
-    expect(Object.keys(CHAINS)).toHaveLength(7);
+  it('has all 6 chains', () => {
+    expect(Object.keys(CHAINS)).toHaveLength(6);
   });
 
   it('getChain returns correct config', () => {
     expect(getChain('base-sepolia').chainId).toBe(84532);
-    expect(getChain('goat-mainnet').chainId).toBe(2345);
+    expect(getChain('goat-testnet').chainId).toBe(48816);
     expect(getChain('tempo-testnet').chainId).toBe(42431);
     expect(getChain('tempo-mainnet').chainId).toBe(4217);
   });
@@ -123,9 +123,8 @@ describe('chains', () => {
   });
 
   it('goat chains include BTC tokens', () => {
-    expect(getChain('goat-mainnet').tokens.WBTC).toBeDefined();
-    expect(getChain('goat-mainnet').tokens.PegBTC).toBeDefined();
     expect(getChain('goat-testnet').tokens.WBTC).toBeDefined();
+    expect(getChain('goat-testnet').tokens.PegBTC).toBeDefined();
   });
 });
 

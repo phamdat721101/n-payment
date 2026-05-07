@@ -69,7 +69,7 @@ const res = await client.fetchWithPayment(service.resource);
 
 ```typescript
 const client = createPaymentClient({
-  chains: ['goat-mainnet'],
+  chains: ['goat-testnet'],
   ows: { wallet: 'goat-agent' },
   goat: { apiKey: '...', apiSecret: '...', merchantId: '...' },
   btcLending: { vaultAddress: '0x...', collateralRatio: 150 },
@@ -196,7 +196,7 @@ class MyOffRampAdapter implements OffRampAdapter {
 
 ```typescript
 interface NPaymentConfig {
-  chains: ChainKey[];           // Required: ['base-sepolia'], ['base-mainnet', 'goat-mainnet']
+  chains: ChainKey[];           // Required: ['base-sepolia'], ['base-mainnet', 'goat-testnet']
   ows: { wallet: string };      // Required: OWS wallet name
   protocol?: 'x402'|'mpp'|'auto'; // Default: 'auto'
   goat?: GoatCredentials;       // Required for goat-* chains
@@ -213,7 +213,6 @@ interface NPaymentConfig {
 | `base-mainnet` | 8453 | x402 | Mainnet |
 | `arbitrum-sepolia` | 421614 | x402 | Testnet |
 | `goat-testnet` | 48816 | GOAT x402 | Testnet |
-| `goat-mainnet` | 2345 | GOAT x402 | Mainnet |
 | `tempo-testnet` | 2 | MPP | Testnet |
 
 ---

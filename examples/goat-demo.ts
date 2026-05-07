@@ -36,7 +36,7 @@ const GOAT_API_KEY = process.env.GOAT_API_KEY ?? '';
 const GOAT_API_SECRET = process.env.GOAT_API_SECRET ?? '';
 const GOAT_MERCHANT_ID = process.env.GOAT_MERCHANT_ID ?? '';
 const GOAT_API_URL = process.env.GOAT_API_URL ?? 'https://api.x402.goat.network';
-const CHAIN = process.env.GOAT_CHAIN === 'mainnet' ? 'goat-mainnet' : 'goat-testnet';
+const CHAIN = 'goat-testnet' as const;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

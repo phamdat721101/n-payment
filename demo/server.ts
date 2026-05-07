@@ -61,11 +61,10 @@ app.get('/api/agent-data', (_req, res) => {
 // ─── GOAT info endpoint ──────────────────────────────────────────────────────
 
 app.get('/api/goat-info', (_req, res) => {
-  const goatMainnet = getChain('goat-mainnet');
   const goatTestnet = getChain('goat-testnet');
   res.json({
     contracts: { IdentityRegistry: GOAT_IDENTITY_REGISTRY, ReputationRegistry: GOAT_REPUTATION_REGISTRY },
-    chains: { mainnet: goatMainnet, testnet: goatTestnet },
+    chains: { testnet: goatTestnet },
     supportedTokens: ['USDC', 'USDT'],
     x402Api: 'https://api.x402.goat.network',
     allChains: Object.entries(CHAINS).map(([key, c]) => ({ key, name: c.name, chainId: c.chainId, protocols: c.protocols })),

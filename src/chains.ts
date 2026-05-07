@@ -28,15 +28,6 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', WBTC: '0x0000000000000000000000000000000000000000', PegBTC: '0x0000000000000000000000000000000000000000' },
     facilitator: 'https://api.x402.goat.network',
   },
-  'goat-mainnet': {
-    chainId: 2345,
-    caip2: 'eip155:2345',
-    name: 'GOAT Network',
-    rpcUrl: 'https://rpc.goat.network',
-    protocols: ['goat'],
-    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', WBTC: '0x0000000000000000000000000000000000000000', PegBTC: '0x0000000000000000000000000000000000000000' },
-    facilitator: 'https://api.x402.goat.network',
-  },
   'tempo-testnet': {
     chainId: 42431,
     caip2: 'eip155:42431',

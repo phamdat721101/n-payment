@@ -4,6 +4,8 @@ Multi-protocol payment SDK for Web3 agents. Unifies [x402](https://x402.org), [M
 
 **Private keys never leave the OWS vault.** Every transaction is policy-gated.
 
+> **Note:** GOAT Network support is currently testnet-only (`goat-testnet`).
+
 [![npm](https://img.shields.io/npm/v/n-payment)](https://www.npmjs.com/package/n-payment)
 
 ## Install
@@ -107,11 +109,11 @@ app.listen(3000, () => console.log('Paid API running on :3000'));
 
 ### Step 5: Use GOAT Network (Optional)
 
-For GOAT x402 payments (BTC-backed stablecoins):
+For GOAT x402 payments (BTC-backed stablecoins, testnet only):
 
 ```typescript
 const client = createPaymentClient({
-  chains: ['goat-mainnet'],
+  chains: ['goat-testnet'],
   ows: { wallet: 'goat-agent' },
   goat: {
     apiKey: process.env.GOAT_API_KEY!,
@@ -177,7 +179,7 @@ Lock BTC as collateral → borrow USDC → pay for services → repay:
 
 ```typescript
 const client = createPaymentClient({
-  chains: ['goat-mainnet'],
+  chains: ['goat-testnet'],
   ows: { wallet: 'btc-agent' },
   goat: { apiKey: '...', apiSecret: '...', merchantId: '...' },
   btcLending: {
@@ -244,7 +246,6 @@ console.log(`Score: ${summary.sum} from ${summary.count} reviews`);
 | Arbitrum Sepolia | `arbitrum-sepolia` | x402 | 421614 |
 | Base | `base-mainnet` | x402 | 8453 |
 | GOAT Testnet3 | `goat-testnet` | GOAT x402 | 48816 |
-| GOAT Network | `goat-mainnet` | GOAT x402 | 2345 |
 | Tempo Testnet | `tempo-testnet` | MPP | 42431 |
 | Tempo | `tempo-mainnet` | MPP | 4217 |
 

@@ -28,7 +28,7 @@ export class GoatAdapter implements PaymentAdapter {
   async pay(url: string, init: RequestInit | undefined, response: Response): Promise<Response> {
     const body = await response.json().catch(() => ({})) as any;
     const accepts = body.accepts?.[0] ?? {};
-    const chainKey = accepts.network?.includes('48816') ? 'goat-testnet' as const : 'goat-mainnet' as const;
+    const chainKey = 'goat-testnet' as const;
     const chainId = CHAINS[chainKey].chainId;
     const amountWei = accepts.maxAmountRequired ?? '10000';
 
