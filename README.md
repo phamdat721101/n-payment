@@ -4,8 +4,6 @@ Multi-protocol payment SDK for Web3 agents. Unifies [x402](https://x402.org), [M
 
 **Private keys never leave the OWS vault.** Every transaction is policy-gated.
 
-> **Note:** GOAT Network support is currently testnet-only (`goat-testnet`).
-
 [![npm](https://img.shields.io/npm/v/n-payment)](https://www.npmjs.com/package/n-payment)
 
 ## Install
@@ -14,290 +12,307 @@ Multi-protocol payment SDK for Web3 agents. Unifies [x402](https://x402.org), [M
 npm install n-payment
 ```
 
-> **npm:** https://www.npmjs.com/package/n-payment
+## What's New in v0.5 — Agent Commerce
 
-## Step-by-Step Guide
+n-payment is now a **full three-layer agent commerce SDK** supporting the MCP + A2A + x402 stack:
 
-### Step 1: Set Up OWS Wallet
+- **Agent as Consumer** — discover, negotiate, pay for services automatically
+- **Agent as Provider** — expose paid tools with dynamic pricing and x402 gating
+- **Multi-Agent Orchestration** — delegation chains, budget tracking, reputation routing
 
-The SDK uses [Open Wallet Standard](https://docs.openwallet.sh) for secure key management. No private keys in your code.
-
-```bash
-# Install OWS CLI
-curl -fsSL https://docs.openwallet.sh/install.sh | bash
-
-# Create a wallet for your agent
-ows wallet create --name my-agent
-
-# Fund wallet on testnet
-ows fund deposit --wallet my-agent
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    n-payment v0.5                                │
+├─────────────────────────────────────────────────────────────────┤
+│  Agent Consumer          │  Agent Provider                      │
+│  createAgentClient()     │  createAgentProvider()               │
+│  discover → negotiate    │  paidTool() → x402 gating           │
+│  → pay → feedback        │  AgentCard → A2A discovery           │
+├─────────────────────────────────────────────────────────────────┤
+│  PricingEngine │ SessionManager │ EscrowManager │ Delegation    │
+├─────────────────────────────────────────────────────────────────┤
+│  PaymentClient (x402 + MPP + GOAT) │ OWSWallet (signing)       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Alternative (development only):** Pass a `privateKey` directly for quick testing:
+---
+
+## Quick Start — Agent Provider (Get Paid)
+
+Expose your API as a paid service that other agents can discover and pay for:
 
 ```typescript
-ows: { wallet: 'dev-agent', privateKey: process.env.PRIVATE_KEY }
+import express from 'express';
+import { createAgentProvider, paidTool, AgentCard } from 'n-payment';
+
+const provider = createAgentProvider({
+  name: 'WeatherBot',
+  description: 'Weather data for AI agents',
+  payTo: '0xYourWalletAddress',
+  chain: 'base-sepolia',
+  tools: [
+    paidTool({
+      name: 'forecast',
+      description: 'Get weather forecast',
+      price: 10000, // 0.01 USDC
+      handler: async (input) => ({ city: input.city, temp: 22 }),
+    }),
+  ],
+});
+
+const app = express();
+app.use(express.json());
+app.use(provider.middleware());
+app.get('/.well-known/agent.json', AgentCard.fromProvider(provider, 'https://your-agent.com').handler());
+app.listen(3000);
 ```
 
-### Step 2: Create a Payment Client (Buyer)
+## Quick Start — Agent Consumer (Pay for Services)
+
+Discover and pay for services with one call:
+
+```typescript
+import { createAgentClient } from 'n-payment';
+
+const agent = createAgentClient({
+  chain: 'base-sepolia',
+  wallet: 'my-agent',
+});
+
+const result = await agent.discoverAndCall('weather', { city: 'Tokyo' });
+// SDK handles: discover → 402 → sign payment → settle → retry → result
+```
+
+---
+
+## How Payment Works
+
+```
+Agent Client                    Facilitator              Agent Provider
+     │                              │                         │
+     │  1. POST /tools/call ────────────────────────────────►│
+     │                              │                         │ no payment
+     │  2. ◄──────────────────────────────────────── 402 ────│
+     │     payment-required: {chain, amount, payTo}           │
+     │                              │                         │
+     │  3. OWS signs EIP-3009       │                         │
+     │                              │                         │
+     │  4. verify + settle ────────►│ broadcasts on-chain     │
+     │                              │                         │
+     │  5. POST /tools/call + x-payment-tx ─────────────────►│
+     │                              │                         │ executes tool
+     │  6. ◄──────────────────────────────────── 200 + data ─│
+```
+
+**Facilitators:**
+- Testnet: `https://x402.org/facilitator` (Base Sepolia)
+- Production: `https://api.cdp.coinbase.com/platform/v2/x402` (Base)
+
+---
+
+## Agent Provider — Full Guide
+
+### Dynamic Pricing
+
+Adjust prices in real-time based on demand, reputation, and outcomes:
+
+```typescript
+import { paidTool, DemandStrategy, ReputationStrategy } from 'n-payment';
+
+paidTool({
+  name: 'premium-data',
+  price: {
+    basePrice: 10000,
+    strategies: [
+      new DemandStrategy({ threshold: 100, multiplier: 2 }),     // 2x at 100 req/min
+      new ReputationStrategy({ discountAbove: 80, discount: 0.7 }), // 30% off for trusted
+    ],
+    min: 5000,
+    max: 100000,
+  },
+  handler: async (input) => { /* ... */ },
+});
+```
+
+### Session-Based Payments (MPP Vouchers)
+
+For high-frequency calls, use sessions — one on-chain tx covers many calls:
+
+```typescript
+const provider = createAgentProvider({
+  // ...
+  sessions: { defaultBudget: 500000, ttlMs: 300_000, settleThreshold: 80 },
+});
+```
+
+Clients send `x-session-id` header — each call deducts from the session budget with zero gas cost (off-chain voucher verification only).
+
+### Escrow (Outcome-Based)
+
+For high-value tasks, lock payment in ERC-8183 escrow:
+
+```typescript
+import { EscrowManager, OWSWallet } from 'n-payment';
+
+const escrow = new EscrowManager(wallet, {
+  contractAddress: '0xEscrowContract',
+  evaluator: '0xEvaluatorAddress',
+  chain: 'base-sepolia',
+});
+
+const job = await escrow.createJob('0xProvider', 100000);
+// Provider submits work → Evaluator approves → Funds released
+```
+
+---
+
+## Agent Consumer — Full Guide
+
+### Step-by-Step Control
+
+```typescript
+const agent = createAgentClient({ chain: 'base-sepolia', wallet: 'my-agent' });
+
+// 1. Discover
+const candidates = await agent.discover('weather');
+
+// 2. Select (by reputation, price, latency)
+const provider = agent.selectProvider(candidates);
+
+// 3. Negotiate terms (direct/escrow/credit based on reputation)
+const terms = agent.negotiate(provider.price, 90);
+
+// 4. Call
+const result = await agent.call(provider.url, { input: { city: 'Paris' } });
+```
+
+### Multi-Agent Delegation
+
+Orchestrate sub-agents with budget tracking:
+
+```typescript
+const delegation = agent.createDelegation(1_000_000); // $1 total
+
+const research = agent.delegate(delegation, 500_000);
+await agent.call('https://research-agent.com/tools/call/analyze', {
+  input: { topic: 'BTC' },
+  delegationCtx: research,
+});
+
+const data = agent.delegate(delegation, 300_000);
+await agent.call('https://data-agent.com/tools/call/fetch', {
+  delegationCtx: data,
+});
+// Remaining: $0.20 tracked automatically
+```
+
+### Reputation Routing
+
+Select providers by trust score:
+
+```typescript
+import { ReputationRouter } from 'n-payment';
+
+const router = new ReputationRouter({ strategy: 'balanced', minReputation: 30 });
+const best = router.select(candidates);
+// Weighs: reputation (40%) + price (35%) + latency (25%)
+```
+
+---
+
+## Human Payments (Unchanged from v0.4)
+
+### Buyer — Pay for APIs
 
 ```typescript
 import { createPaymentClient } from 'n-payment';
 
 const client = createPaymentClient({
-  chains: ['base-sepolia'],          // Which chains to support
-  ows: { wallet: 'my-agent' },       // OWS wallet name
+  chains: ['base-sepolia'],
+  ows: { wallet: 'my-agent' },
 });
+
+const response = await client.fetchWithPayment('https://api.example.com/data');
 ```
 
-### Step 3: Make Paid API Requests
-
-The client auto-detects the payment protocol (x402 or MPP) from the server's 402 response:
+### Seller — Paywall Middleware
 
 ```typescript
-// Automatically handles 402 → detect protocol → pay → retry
-const response = await client.fetchWithPayment('https://api.example.com/premium-data');
-const data = await response.json();
-console.log(data);
-```
-
-That's it for the buyer side. The SDK handles:
-1. Initial request → receives 402
-2. Parses payment challenge from headers
-3. Detects protocol (x402 vs MPP)
-4. Signs and sends payment via OWS wallet
-5. Retries request with payment proof
-
-### Step 4: Create a Paywall (Seller)
-
-Protect your API endpoints with a payment wall that supports both x402 and MPP:
-
-```typescript
-import express from 'express';
 import { createPaywall, createHealthEndpoint } from 'n-payment';
 
-const app = express();
-
-const paywallConfig = {
+app.use(createPaywall({
   routes: {
     'GET /api/weather': {
-      price: '10000',                              // in smallest unit (e.g. 0.01 USDC)
-      description: 'Weather data',
-      x402: { payTo: '0xYourWalletAddress' },      // x402 payment recipient
-      mpp: { currency: '0x20c0...', recipient: '0xYourWalletAddress' },  // MPP config
-    },
-    'POST /api/translate': {
-      price: '50000',
-      x402: { payTo: '0xYourWalletAddress' },
+      price: '10000',
+      x402: { payTo: '0xYourAddress' },
+      mpp: { currency: '0x20c0...', recipient: '0xYourAddress' },
     },
   },
-};
-
-// Add paywall middleware — returns 402 with payment challenges
-app.use(createPaywall(paywallConfig));
-
-// Health endpoint shows pricing for all routes
-app.get('/health', createHealthEndpoint(paywallConfig));
-
-// Your actual route handlers (only reached after payment)
-app.get('/api/weather', (req, res) => {
-  res.json({ city: 'Tokyo', temp: 22 });
-});
-
-app.listen(3000, () => console.log('Paid API running on :3000'));
+}));
 ```
 
-### Step 5: Use GOAT Network (Optional)
+---
 
-For GOAT x402 payments (BTC-backed stablecoins, testnet only):
+## OWS Wallet Setup
 
+```bash
+curl -fsSL https://docs.openwallet.sh/install.sh | bash
+ows wallet create --name my-agent
+ows fund deposit --wallet my-agent
+```
+
+Dev-only fallback:
 ```typescript
-const client = createPaymentClient({
-  chains: ['goat-testnet'],
-  ows: { wallet: 'goat-agent' },
-  goat: {
-    apiKey: process.env.GOAT_API_KEY!,
-    apiSecret: process.env.GOAT_API_SECRET!,
-    merchantId: process.env.GOAT_MERCHANT_ID!,
-  },
-});
-
-// Full GOAT lifecycle: createOrder → ERC-20 transfer → poll → proof → retry
-const res = await client.fetchWithPayment('https://api.goat.network/data');
+ows: { wallet: 'dev-agent', privateKey: process.env.PRIVATE_KEY }
 ```
 
-### Step 6: Discover Paid Services (Bazaar)
-
-Find available paid APIs in the x402 ecosystem:
-
-```typescript
-import { createBazaarClient } from 'n-payment';
-
-const bazaar = createBazaarClient({
-  facilitatorUrl: 'https://x402.org/facilitator',  // or omit for mock catalog
-});
-
-// List all available services
-const services = await bazaar.listServices({ type: 'http' });
-
-// Search for specific services
-const results = await bazaar.search('weather');
-console.log(results.resources);
-// → [{ resource: 'https://...', description: 'Weather data', accepts: [...] }]
-```
-
-### Step 7: Off-Ramp to Fiat (Optional)
-
-Convert earned USDC to fiat currency:
-
-```typescript
-import { OffRampClient, MockMoonPayAdapter } from 'n-payment';
-
-const offramp = new OffRampClient(new MockMoonPayAdapter());
-
-// Get a quote
-const quote = await offramp.getQuote({
-  amount: '100',
-  token: 'USDC',
-  chain: 'base-sepolia',
-  fiatCurrency: 'USD',
-});
-console.log(quote); // { fiatAmount: '99.50', feePercent: 0.5, estimatedDays: 2 }
-
-// Execute withdrawal
-const receipt = await offramp.withdraw({
-  amount: '100',
-  token: 'USDC',
-  chain: 'base-sepolia',
-  destination: { type: 'bank_account', id: 'acct_123' },
-});
-```
-
-### Step 8: BTC Lending on GOAT (Advanced)
-
-Lock BTC as collateral → borrow USDC → pay for services → repay:
-
-```typescript
-const client = createPaymentClient({
-  chains: ['goat-testnet'],
-  ows: { wallet: 'btc-agent' },
-  goat: { apiKey: '...', apiSecret: '...', merchantId: '...' },
-  btcLending: {
-    vaultAddress: '0xYourVaultContract',
-    collateralRatio: 150,  // 150% collateral
-  },
-});
-
-// Payment automatically uses BTC lending when configured
-const res = await client.fetchWithPayment('https://api.goat.network/premium');
-```
-
-### Step 9: Agent Identity & Reputation (GOAT ERC-8004)
-
-Register your agent on-chain and build reputation:
-
-```typescript
-import { GoatIdentity, OWSWallet } from 'n-payment';
-
-const wallet = new OWSWallet({ wallet: 'my-agent' });
-const identity = new GoatIdentity(wallet);
-
-// Register agent
-const txHash = await identity.registerAgent('https://my-agent.com/.well-known/agent.json');
-
-// Give feedback to another agent
-await identity.giveFeedback(42n, 5, 'https://api.example.com/data');
-
-// Check reputation
-const summary = await identity.getSummary(42n);
-console.log(`Score: ${summary.sum} from ${summary.count} reviews`);
-```
-
-## Configuration Reference
-
-### `createPaymentClient(config)`
-
-| Option | Type | Required | Description |
-|--------|------|----------|-------------|
-| `chains` | `ChainKey[]` | ✅ | Chains to support |
-| `ows.wallet` | `string` | ✅ | OWS wallet name |
-| `ows.privateKey` | `string` | — | Dev-only fallback key |
-| `ows.autoFaucet` | `boolean` | — | Auto-fund on testnet |
-| `protocol` | `'x402' \| 'mpp' \| 'auto'` | — | Protocol preference (default: `'auto'`) |
-| `goat` | `GoatCredentials` | — | Required for GOAT chains |
-| `btcLending` | `BtcLendingConfig` | — | BTC lending vault config |
-| `analytics` | `{ plugins: AnalyticsPlugin[] }` | — | Custom analytics plugins |
-
-### `createPaywall(config)`
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `routes` | `Record<string, PaywallRouteConfig>` | Route → pricing map (key format: `"METHOD /path"`) |
-| `routes[].price` | `string` | Price in smallest token unit |
-| `routes[].x402.payTo` | `string` | x402 payment recipient address |
-| `routes[].mpp.currency` | `string` | MPP token contract address |
-| `routes[].mpp.recipient` | `string` | MPP payment recipient address |
+---
 
 ## Supported Chains
 
 | Chain | Key | Protocol | Chain ID |
 |-------|-----|----------|----------|
 | Base Sepolia | `base-sepolia` | x402 | 84532 |
-| Arbitrum Sepolia | `arbitrum-sepolia` | x402 | 421614 |
 | Base | `base-mainnet` | x402 | 8453 |
-| GOAT Testnet3 | `goat-testnet` | GOAT x402 | 48816 |
+| Arbitrum Sepolia | `arbitrum-sepolia` | x402 | 421614 |
+| GOAT Testnet | `goat-testnet` | GOAT x402 | 48816 |
 | Tempo Testnet | `tempo-testnet` | MPP | 42431 |
 | Tempo | `tempo-mainnet` | MPP | 4217 |
 
-## Architecture
+---
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  PaymentClient                       │
-│  fetchWithPayment(url) → auto-detect → pay → retry │
-├─────────────────────────────────────────────────────┤
-│  X402Adapter  │  MppAdapter  │  GoatAdapter         │
-├─────────────────────────────────────────────────────┤
-│              OWSWallet (signing layer)               │
-│         OWS CLI Driver │ privateKey fallback         │
-├─────────────────────────────────────────────────────┤
-│  BazaarClient │ OffRampClient │ GoatIdentity        │
-└─────────────────────────────────────────────────────┘
-```
+## API Reference
 
-## OWS Security Model
+### Agent Commerce
 
-- Private keys encrypted at rest in OWS vault (`~/.ows/wallets/`)
-- Policy engine evaluates every transaction before signing
-- Keys decrypted only in signing path, wiped after use
-- Agent never sees seeds, mnemonics, or raw key material
+| Export | Purpose |
+|--------|---------|
+| `createAgentProvider(config)` | Create agent that sells services |
+| `createAgentClient(config)` | Create agent that buys services |
+| `paidTool(def)` | Define a paid tool (MCP-compatible) |
+| `AgentCard.fromProvider(config, url)` | Generate A2A Agent Card |
+| `PricingEngine` | Composable dynamic pricing |
+| `DemandStrategy` | Surge pricing by request volume |
+| `ReputationStrategy` | Discount/premium by ERC-8004 score |
+| `OutcomeStrategy` | Bonus for verified quality |
+| `SessionManager` | Streaming micropayment sessions |
+| `EscrowManager` | ERC-8183 programmable escrow |
+| `PaymentNegotiator` | Auto-select direct/escrow/credit |
+| `ReputationRouter` | Trust-weighted provider selection |
+| `DelegationManager` | Multi-agent budget chains |
 
-## Migration from v0.1
+### Core
 
-v0.2+ replaces `privateKey` with OWS wallet management:
+| Export | Purpose |
+|--------|---------|
+| `createPaymentClient(config)` | Create payment client (buyer) |
+| `createPaywall(config)` | Express paywall middleware |
+| `createHealthEndpoint(config)` | Health/pricing endpoint |
+| `GoatIdentity` | ERC-8004 agent identity + reputation |
+| `BazaarClient` | Service discovery |
+| `OffRampClient` | USDC → fiat conversion |
 
-```diff
-  const client = createPaymentClient({
-    chains: ['base-sepolia'],
--   privateKey: process.env.PRIVATE_KEY!,
-+   ows: { wallet: 'my-agent' },
-  });
-```
-
-## Peer Dependencies (Optional)
-
-Install only what you need:
-
-```bash
-# For x402 protocol
-npm install @x402/core @x402/evm @x402/fetch
-
-# For MPP protocol (Tempo)
-npm install mppx
-
-# For OWS SDK (production)
-npm install @open-wallet-standard/core
-```
+---
 
 ## License
 

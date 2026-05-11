@@ -49,3 +49,22 @@ export { TestnetFaucet } from './faucet.js';
 // ─── Transactor ──────────────────────────────────────────────────────────────
 export { ViemTransactor } from './transactor.js';
 export type { TransactionResult } from './transactor.js';
+
+// ─── Agent Commerce (v0.5) ─────────────────────────────────────────────────
+export {
+  paidTool, AgentProvider, createAgentProvider,
+  AgentClient, createAgentClient,
+  PricingEngine, DemandStrategy, ReputationStrategy, OutcomeStrategy,
+  SessionManager, EscrowManager, PaymentNegotiator,
+  ReputationRouter, DelegationManager, AgentCard,
+} from './agent/index.js';
+
+export type {
+  PricingMode, PricingStrategy, PricingContext, PricingConfig,
+  Session, SessionConfig, Job, JobStatus, EscrowConfig,
+  PaymentTerms, NegotiationResult, NegotiationPolicy,
+  DelegationContext, DelegationConfig,
+  AgentSkill, AgentCardData, PaidToolDef, ToolCallContext,
+  AgentProviderConfig, AgentClientConfig,
+  RoutingStrategy, ProviderCandidate, RouterConfig,
+} from './agent/index.js';

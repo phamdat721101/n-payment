@@ -1,4 +1,4 @@
-import type { PaymentAdapter, GoatCredentials } from '../types.js';
+import type { PaymentAdapter, GoatCredentials, ChainKey } from '../types.js';
 import type { OWSWallet } from '../ows/wallet.js';
 import { GoatX402Client } from '../goat/client.js';
 import { CHAINS } from '../chains.js';
@@ -14,10 +14,12 @@ export class GoatAdapter implements PaymentAdapter {
   private goatClient: GoatX402Client;
   private wallet: OWSWallet;
   private lendingVault?: BtcLendingVault;
+  private chainKey: ChainKey;
 
-  constructor(config: GoatCredentials, wallet: OWSWallet, lendingVault?: BtcLendingVault) {
+  constructor(config: GoatCredentials, wallet: OWSWallet, chainKey?: ChainKey, lendingVault?: BtcLendingVault) {
     this.goatClient = new GoatX402Client(config);
     this.wallet = wallet;
+    this.chainKey = chainKey ?? (process.env.GOAT_CHAIN === 'mainnet' ? 'goat-mainnet' : 'goat-testnet');
     this.lendingVault = lendingVault;
   }
 
@@ -28,7 +30,7 @@ export class GoatAdapter implements PaymentAdapter {
   async pay(url: string, init: RequestInit | undefined, response: Response): Promise<Response> {
     const body = await response.json().catch(() => ({})) as any;
     const accepts = body.accepts?.[0] ?? {};
-    const chainKey = 'goat-testnet' as const;
+    const chainKey = this.chainKey;
     const chainId = CHAINS[chainKey].chainId;
     const amountWei = accepts.maxAmountRequired ?? '10000';
 

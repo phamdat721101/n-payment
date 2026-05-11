@@ -35,8 +35,9 @@ export class PaymentClient {
       this.adapters.push(new MppAdapter(this.wallet, mppChain, config.autoFaucet));
     }
     if (hasGoat && config.goat) {
+      const goatChain = getChainsForProtocol(config.chains, 'goat')[0];
       const vault = config.btcLending ? new BtcLendingVault(this.wallet, config.btcLending) : undefined;
-      this.adapters.push(new GoatAdapter(config.goat, this.wallet, vault));
+      this.adapters.push(new GoatAdapter(config.goat, this.wallet, goatChain, vault));
     }
   }
 

@@ -6,6 +6,7 @@ export type ChainKey =
   | 'base-sepolia'
   | 'arbitrum-sepolia'
   | 'goat-testnet'
+  | 'goat-mainnet'
   | 'tempo-testnet'
   | 'tempo-mainnet'
   | 'base-mainnet';

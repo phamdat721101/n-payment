@@ -105,8 +105,8 @@ describe('createConfig', () => {
 // ─── chains ──────────────────────────────────────────────────────────────────
 
 describe('chains', () => {
-  it('has all 6 chains', () => {
-    expect(Object.keys(CHAINS)).toHaveLength(6);
+  it('has all 7 chains', () => {
+    expect(Object.keys(CHAINS)).toHaveLength(7);
   });
 
   it('getChain returns correct config', () => {

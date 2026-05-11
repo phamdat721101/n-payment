@@ -26,7 +26,7 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
   }
 
   if (input.btcLending && !hasGoatChain) {
-    throw new NPaymentError('btcLending requires a GOAT chain', 'INVALID_CONFIG', 'Add goat-testnet to chains');
+    throw new NPaymentError('btcLending requires a GOAT chain', 'INVALID_CONFIG', 'Add goat-testnet or goat-mainnet to chains');
   }
 
   if (input.btcLending && !input.btcLending.vaultAddress) {

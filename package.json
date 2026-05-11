@@ -1,6 +1,6 @@
 {
   "name": "n-payment",
-  "version": "0.4.11",
+  "version": "0.5.2",
   "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402 with service discovery, off-ramp, and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -47,9 +47,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/phamdat/n-payment"
+    "url": "git+https://github.com/phamdat721101/n-payment.git"
   },
-  "homepage": "https://github.com/phamdat/n-payment#readme",
+  "homepage": "https://github.com/phamdat721101/n-payment#readme",
   "author": "phamdat",
   "engines": {
     "node": ">=18"
