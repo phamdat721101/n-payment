@@ -10,6 +10,9 @@ import { MppAdapter } from './adapters/mpp.js';
 import { GoatAdapter } from './adapters/goat.js';
 import { XrplAdapter } from './adapters/xrpl.js';
 import { XrplWallet } from './xrpl/wallet.js';
+import { StellarX402Adapter } from './adapters/stellar-x402.js';
+import { StellarMppAdapter } from './adapters/stellar-mpp.js';
+import { StellarWallet } from './stellar/wallet.js';
 import { BtcLendingVault } from './goat/lending.js';
 
 export class PaymentClient {
@@ -47,6 +50,15 @@ export class PaymentClient {
       const xrplChain = getChainsForProtocol(config.chains, 'xrpl')[0];
       const xrplWallet = new XrplWallet({ seed: config.xrpl.seed, owsWallet: config.ows.wallet });
       this.adapters.push(new XrplAdapter(xrplWallet, xrplChain));
+    }
+
+    const hasStellarX402 = getChainsForProtocol(config.chains, 'stellar-x402').length > 0;
+    const hasStellarMpp = getChainsForProtocol(config.chains, 'stellar-mpp').length > 0;
+    if ((hasStellarX402 || hasStellarMpp) && config.stellar?.secretKey) {
+      const stellarWallet = new StellarWallet({ secretKey: config.stellar.secretKey });
+      const stellarChain = getChainsForProtocol(config.chains, 'stellar-x402')[0] ?? getChainsForProtocol(config.chains, 'stellar-mpp')[0];
+      if (hasStellarX402) this.adapters.push(new StellarX402Adapter(stellarWallet, stellarChain));
+      if (hasStellarMpp) this.adapters.push(new StellarMppAdapter(stellarWallet, stellarChain));
     }
   }
 

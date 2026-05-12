@@ -1,6 +1,6 @@
 # n-payment
 
-Multi-protocol payment SDK for Web3 agents. Unifies [x402](https://x402.org), [MPP](https://mpp.dev), and [GOAT x402](https://docs.goat.network/builders/x402) behind a single `fetchWithPayment()` call — secured by the [Open Wallet Standard (OWS)](https://docs.openwallet.sh).
+Multi-protocol payment SDK for Web3 agents. Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network/builders/x402), and [Stellar](https://stellar.org) behind a single `fetchWithPayment()` call — secured by the [Open Wallet Standard (OWS)](https://docs.openwallet.sh).
 
 **Private keys never leave the OWS vault.** Every transaction is policy-gated.
 
@@ -12,17 +12,13 @@ Multi-protocol payment SDK for Web3 agents. Unifies [x402](https://x402.org), [M
 npm install n-payment
 ```
 
-## What's New in v0.5 — Agent Commerce
+## What's New in v0.7 — Stellar Agentic Economy
 
-n-payment is now a **full three-layer agent commerce SDK** supporting the MCP + A2A + x402 stack:
-
-- **Agent as Consumer** — discover, negotiate, pay for services automatically
-- **Agent as Provider** — expose paid tools with dynamic pricing and x402 gating
-- **Multi-Agent Orchestration** — delegation chains, budget tracking, reputation routing
+n-payment now supports **Stellar Network** with both **x402** and **MPP** protocols, plus **Trustless Work** escrow-based funding management for milestone-driven agent commerce.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    n-payment v0.5                                │
+│                    n-payment v0.7                                │
 ├─────────────────────────────────────────────────────────────────┤
 │  Agent Consumer          │  Agent Provider                      │
 │  createAgentClient()     │  createAgentProvider()               │
@@ -31,15 +27,132 @@ n-payment is now a **full three-layer agent commerce SDK** supporting the MCP + 
 ├─────────────────────────────────────────────────────────────────┤
 │  PricingEngine │ SessionManager │ EscrowManager │ Delegation    │
 ├─────────────────────────────────────────────────────────────────┤
-│  PaymentClient (x402 + MPP + GOAT) │ OWSWallet (signing)       │
+│  Stellar (x402 + MPP)   │  Trustless Work (Escrow-as-a-Service)│
+│  Base / Arbitrum (x402)  │  GOAT Network │ Tempo (MPP)          │
+├─────────────────────────────────────────────────────────────────┤
+│  PaymentClient (auto-detect) │ OWSWallet │ StellarWallet        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Quick Start — Agent Provider (Get Paid)
+## Quick Start — Stellar Payments
 
-Expose your API as a paid service that other agents can discover and pay for:
+Pay for APIs on Stellar with automatic x402/MPP protocol detection:
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['stellar-testnet'],
+  ows: { wallet: 'my-agent' },
+  stellar: { secretKey: process.env.STELLAR_SECRET },
+});
+
+// SDK auto-detects x402 or MPP from the 402 response
+const response = await client.fetchWithPayment('https://api.example.com/data');
+```
+
+## Quick Start — Trustless Work Escrow
+
+Coordinate agent-to-agent payments with milestone-based escrow on Stellar:
+
+```typescript
+import { StellarWallet, TrustlessEscrowManager } from 'n-payment';
+
+const wallet = new StellarWallet({ secretKey: process.env.STELLAR_SECRET });
+const escrow = new TrustlessEscrowManager(wallet, { chain: 'stellar-testnet' });
+
+// 1. Create escrow job with milestones
+const job = await escrow.createJob({
+  provider: 'GPROVIDER...', // Stellar address of service provider
+  amount: '10000000',       // 10 USDC (7 decimals on Stellar)
+  title: 'AI Research Task',
+  milestones: [
+    { description: 'Deliver initial analysis' },
+    { description: 'Final report' },
+  ],
+  type: 'multi', // progressive milestone payouts
+});
+
+// 2. Fund the escrow
+await escrow.fundJob(job.id);
+
+// 3. Provider completes milestone
+await escrow.submitMilestone(job.id, 0);
+
+// 4. Approve and release funds for milestone
+await escrow.approveAndRelease(job.id, 0);
+```
+
+---
+
+## How Stellar Payment Works
+
+```
+Agent Client                 Facilitator/Soroban          Agent Provider
+     │                              │                         │
+     │  1. POST /api/data ──────────────────────────────────►│
+     │                              │                         │ no payment
+     │  2. ◄──────────────────────────────────────── 402 ────│
+     │     payment-required: {stellar:testnet, amount, payTo} │
+     │                              │                         │
+     │  3. Sign Soroban auth entry  │                         │
+     │                              │                         │
+     │  4. verify + settle ────────►│ SAC transfer on-chain   │
+     │                              │                         │
+     │  5. POST /api/data + x-payment-signature ────────────►│
+     │                              │                         │ returns data
+     │  6. ◄──────────────────────────────────── 200 + data ─│
+```
+
+**Stellar Facilitators:**
+- Testnet: `https://channels.openzeppelin.com/x402/testnet`
+- Mainnet: `https://channels.openzeppelin.com/x402`
+
+---
+
+## Trustless Work — Escrow-as-a-Service
+
+[Trustless Work](https://trustlesswork.com) provides non-custodial stablecoin escrows on Stellar (Soroban). n-payment integrates it for:
+
+- **Agent-pays-for-service** — Fund escrow, provider delivers, approver releases
+- **Platform escrow** — Marketplace with milestone-based payouts
+- **Budget delegation** — Multi-release escrows for sub-agent coordination
+
+### Escrow Lifecycle
+
+```
+Create → Fund → Submit Milestone → Approve → Release
+                                 ↘ Dispute → Resolve
+```
+
+### Direct API Access
+
+```typescript
+import { TrustlessWorkClient, StellarWallet } from 'n-payment';
+
+const tw = new TrustlessWorkClient({ apiUrl: 'https://dev.api.trustlesswork.com' });
+const wallet = new StellarWallet({ secretKey: 'S...' });
+
+// Deploy a single-release escrow
+const { contractId, unsignedXdr } = await tw.deploySingleRelease({
+  title: 'Logo Design',
+  amount: '5000000',
+  receiver: 'GDESIGNER...',
+  serviceProvider: 'GDESIGNER...',
+  approver: 'GCLIENT...',
+  releaseSigner: 'GCLIENT...',
+  milestones: [{ description: 'Deliver final logo files' }],
+});
+
+// Sign and submit
+await tw.signAndSubmit(unsignedXdr, wallet, 'Test SDF Network ; September 2015');
+```
+
+---
+
+## Quick Start — Agent Provider (Get Paid)
 
 ```typescript
 import express from 'express';
@@ -54,7 +167,7 @@ const provider = createAgentProvider({
     paidTool({
       name: 'forecast',
       description: 'Get weather forecast',
-      price: 10000, // 0.01 USDC
+      price: 10000,
       handler: async (input) => ({ city: input.city, temp: 22 }),
     }),
   ],
@@ -69,8 +182,6 @@ app.listen(3000);
 
 ## Quick Start — Agent Consumer (Pay for Services)
 
-Discover and pay for services with one call:
-
 ```typescript
 import { createAgentClient } from 'n-payment';
 
@@ -80,176 +191,65 @@ const agent = createAgentClient({
 });
 
 const result = await agent.discoverAndCall('weather', { city: 'Tokyo' });
-// SDK handles: discover → 402 → sign payment → settle → retry → result
 ```
 
 ---
 
-## How Payment Works
+## Supported Chains
 
-```
-Agent Client                    Facilitator              Agent Provider
-     │                              │                         │
-     │  1. POST /tools/call ────────────────────────────────►│
-     │                              │                         │ no payment
-     │  2. ◄──────────────────────────────────────── 402 ────│
-     │     payment-required: {chain, amount, payTo}           │
-     │                              │                         │
-     │  3. OWS signs EIP-3009       │                         │
-     │                              │                         │
-     │  4. verify + settle ────────►│ broadcasts on-chain     │
-     │                              │                         │
-     │  5. POST /tools/call + x-payment-tx ─────────────────►│
-     │                              │                         │ executes tool
-     │  6. ◄──────────────────────────────────── 200 + data ─│
-```
-
-**Facilitators:**
-- Testnet: `https://x402.org/facilitator` (Base Sepolia)
-- Production: `https://api.cdp.coinbase.com/platform/v2/x402` (Base)
+| Chain | Key | Protocol | Chain ID |
+|-------|-----|----------|----------|
+| Base Sepolia | `base-sepolia` | x402 | 84532 |
+| Base | `base-mainnet` | x402 | 8453 |
+| Arbitrum Sepolia | `arbitrum-sepolia` | x402 | 421614 |
+| GOAT Testnet | `goat-testnet` | GOAT x402 | 48816 |
+| Tempo Testnet | `tempo-testnet` | MPP | 42431 |
+| Tempo | `tempo-mainnet` | MPP | 4217 |
+| **Stellar Testnet** | `stellar-testnet` | **x402 + MPP** | Soroban |
+| **Stellar Mainnet** | `stellar-mainnet` | **x402 + MPP** | Soroban |
 
 ---
 
-## Agent Provider — Full Guide
+## API Reference
 
-### Dynamic Pricing
+### Stellar & Trustless Work
 
-Adjust prices in real-time based on demand, reputation, and outcomes:
+| Export | Purpose |
+|--------|---------|
+| `StellarWallet` | Stellar keypair wallet with Soroban auth signing |
+| `StellarX402Adapter` | x402 payment adapter for Stellar |
+| `StellarMppAdapter` | MPP payment adapter for Stellar |
+| `TrustlessWorkClient` | REST client for Trustless Work escrow API |
+| `TrustlessEscrowManager` | Agent-to-agent escrow lifecycle manager |
 
-```typescript
-import { paidTool, DemandStrategy, ReputationStrategy } from 'n-payment';
+### Agent Commerce
 
-paidTool({
-  name: 'premium-data',
-  price: {
-    basePrice: 10000,
-    strategies: [
-      new DemandStrategy({ threshold: 100, multiplier: 2 }),     // 2x at 100 req/min
-      new ReputationStrategy({ discountAbove: 80, discount: 0.7 }), // 30% off for trusted
-    ],
-    min: 5000,
-    max: 100000,
-  },
-  handler: async (input) => { /* ... */ },
-});
-```
+| Export | Purpose |
+|--------|---------|
+| `createAgentProvider(config)` | Create agent that sells services |
+| `createAgentClient(config)` | Create agent that buys services |
+| `paidTool(def)` | Define a paid tool (MCP-compatible) |
+| `AgentCard.fromProvider(config, url)` | Generate A2A Agent Card |
+| `PricingEngine` | Composable dynamic pricing |
+| `DemandStrategy` | Surge pricing by request volume |
+| `ReputationStrategy` | Discount/premium by ERC-8004 score |
+| `OutcomeStrategy` | Bonus for verified quality |
+| `SessionManager` | Streaming micropayment sessions |
+| `EscrowManager` | ERC-8183 programmable escrow (EVM) |
+| `PaymentNegotiator` | Auto-select direct/escrow/credit |
+| `ReputationRouter` | Trust-weighted provider selection |
+| `DelegationManager` | Multi-agent budget chains |
 
-### Session-Based Payments (MPP Vouchers)
+### Core
 
-For high-frequency calls, use sessions — one on-chain tx covers many calls:
-
-```typescript
-const provider = createAgentProvider({
-  // ...
-  sessions: { defaultBudget: 500000, ttlMs: 300_000, settleThreshold: 80 },
-});
-```
-
-Clients send `x-session-id` header — each call deducts from the session budget with zero gas cost (off-chain voucher verification only).
-
-### Escrow (Outcome-Based)
-
-For high-value tasks, lock payment in ERC-8183 escrow:
-
-```typescript
-import { EscrowManager, OWSWallet } from 'n-payment';
-
-const escrow = new EscrowManager(wallet, {
-  contractAddress: '0xEscrowContract',
-  evaluator: '0xEvaluatorAddress',
-  chain: 'base-sepolia',
-});
-
-const job = await escrow.createJob('0xProvider', 100000);
-// Provider submits work → Evaluator approves → Funds released
-```
-
----
-
-## Agent Consumer — Full Guide
-
-### Step-by-Step Control
-
-```typescript
-const agent = createAgentClient({ chain: 'base-sepolia', wallet: 'my-agent' });
-
-// 1. Discover
-const candidates = await agent.discover('weather');
-
-// 2. Select (by reputation, price, latency)
-const provider = agent.selectProvider(candidates);
-
-// 3. Negotiate terms (direct/escrow/credit based on reputation)
-const terms = agent.negotiate(provider.price, 90);
-
-// 4. Call
-const result = await agent.call(provider.url, { input: { city: 'Paris' } });
-```
-
-### Multi-Agent Delegation
-
-Orchestrate sub-agents with budget tracking:
-
-```typescript
-const delegation = agent.createDelegation(1_000_000); // $1 total
-
-const research = agent.delegate(delegation, 500_000);
-await agent.call('https://research-agent.com/tools/call/analyze', {
-  input: { topic: 'BTC' },
-  delegationCtx: research,
-});
-
-const data = agent.delegate(delegation, 300_000);
-await agent.call('https://data-agent.com/tools/call/fetch', {
-  delegationCtx: data,
-});
-// Remaining: $0.20 tracked automatically
-```
-
-### Reputation Routing
-
-Select providers by trust score:
-
-```typescript
-import { ReputationRouter } from 'n-payment';
-
-const router = new ReputationRouter({ strategy: 'balanced', minReputation: 30 });
-const best = router.select(candidates);
-// Weighs: reputation (40%) + price (35%) + latency (25%)
-```
-
----
-
-## Human Payments (Unchanged from v0.4)
-
-### Buyer — Pay for APIs
-
-```typescript
-import { createPaymentClient } from 'n-payment';
-
-const client = createPaymentClient({
-  chains: ['base-sepolia'],
-  ows: { wallet: 'my-agent' },
-});
-
-const response = await client.fetchWithPayment('https://api.example.com/data');
-```
-
-### Seller — Paywall Middleware
-
-```typescript
-import { createPaywall, createHealthEndpoint } from 'n-payment';
-
-app.use(createPaywall({
-  routes: {
-    'GET /api/weather': {
-      price: '10000',
-      x402: { payTo: '0xYourAddress' },
-      mpp: { currency: '0x20c0...', recipient: '0xYourAddress' },
-    },
-  },
-}));
-```
+| Export | Purpose |
+|--------|---------|
+| `createPaymentClient(config)` | Create payment client (buyer) |
+| `createPaywall(config)` | Express paywall middleware |
+| `createHealthEndpoint(config)` | Health/pricing endpoint |
+| `GoatIdentity` | ERC-8004 agent identity + reputation |
+| `BazaarClient` | Service discovery |
+| `OffRampClient` | USDC → fiat conversion |
 
 ---
 
@@ -265,52 +265,6 @@ Dev-only fallback:
 ```typescript
 ows: { wallet: 'dev-agent', privateKey: process.env.PRIVATE_KEY }
 ```
-
----
-
-## Supported Chains
-
-| Chain | Key | Protocol | Chain ID |
-|-------|-----|----------|----------|
-| Base Sepolia | `base-sepolia` | x402 | 84532 |
-| Base | `base-mainnet` | x402 | 8453 |
-| Arbitrum Sepolia | `arbitrum-sepolia` | x402 | 421614 |
-| GOAT Testnet | `goat-testnet` | GOAT x402 | 48816 |
-| Tempo Testnet | `tempo-testnet` | MPP | 42431 |
-| Tempo | `tempo-mainnet` | MPP | 4217 |
-
----
-
-## API Reference
-
-### Agent Commerce
-
-| Export | Purpose |
-|--------|---------|
-| `createAgentProvider(config)` | Create agent that sells services |
-| `createAgentClient(config)` | Create agent that buys services |
-| `paidTool(def)` | Define a paid tool (MCP-compatible) |
-| `AgentCard.fromProvider(config, url)` | Generate A2A Agent Card |
-| `PricingEngine` | Composable dynamic pricing |
-| `DemandStrategy` | Surge pricing by request volume |
-| `ReputationStrategy` | Discount/premium by ERC-8004 score |
-| `OutcomeStrategy` | Bonus for verified quality |
-| `SessionManager` | Streaming micropayment sessions |
-| `EscrowManager` | ERC-8183 programmable escrow |
-| `PaymentNegotiator` | Auto-select direct/escrow/credit |
-| `ReputationRouter` | Trust-weighted provider selection |
-| `DelegationManager` | Multi-agent budget chains |
-
-### Core
-
-| Export | Purpose |
-|--------|---------|
-| `createPaymentClient(config)` | Create payment client (buyer) |
-| `createPaywall(config)` | Express paywall middleware |
-| `createHealthEndpoint(config)` | Health/pricing endpoint |
-| `GoatIdentity` | ERC-8004 agent identity + reputation |
-| `BazaarClient` | Service discovery |
-| `OffRampClient` | USDC → fiat conversion |
 
 ---
 

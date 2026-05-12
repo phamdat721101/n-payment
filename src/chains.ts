@@ -86,6 +86,24 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     protocols: ['xrpl'],
     tokens: { RLUSD: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', XRP: 'native' },
   },
+  'stellar-testnet': {
+    chainId: 0,
+    caip2: 'stellar:testnet',
+    name: 'Stellar Testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+    protocols: ['stellar-x402', 'stellar-mpp'],
+    tokens: { USDC: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA' },
+    facilitator: 'https://channels.openzeppelin.com/x402/testnet',
+  },
+  'stellar-mainnet': {
+    chainId: 0,
+    caip2: 'stellar:pubnet',
+    name: 'Stellar Mainnet',
+    rpcUrl: 'https://soroban.stellar.org',
+    protocols: ['stellar-x402', 'stellar-mpp'],
+    tokens: { USDC: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75' },
+    facilitator: 'https://channels.openzeppelin.com/x402',
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

@@ -2,7 +2,7 @@
 export type {
   ProtocolType, ChainKey, ChainConfig, NPaymentConfig, GoatCredentials,
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
-  OWSConfig, BtcLendingConfig, XrplConfig,
+  OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -45,6 +45,16 @@ export { OffRampClient, MockMoonPayAdapter } from './offramp/index.js';
 
 // ─── Faucet ──────────────────────────────────────────────────────────────────
 export { TestnetFaucet } from './faucet.js';
+
+// ─── Stellar & Trustless Work ────────────────────────────────────────────────
+export { StellarWallet } from './stellar/wallet.js';
+export type { StellarWalletConfig } from './stellar/wallet.js';
+export { TrustlessWorkClient } from './stellar/trustless-work.js';
+export type { TrustlessWorkConfig, EscrowDeployParams, EscrowStatus } from './stellar/trustless-work.js';
+export { TrustlessEscrowManager } from './stellar/escrow-manager.js';
+export type { TrustlessJob, TrustlessJobStatus, TrustlessEscrowConfig } from './stellar/escrow-manager.js';
+export { StellarX402Adapter } from './adapters/stellar-x402.js';
+export { StellarMppAdapter } from './adapters/stellar-mpp.js';
 
 // ─── XRPL (Ripple) ──────────────────────────────────────────────────────────
 export { XrplClient, createXrplClient } from './xrpl/client.js';

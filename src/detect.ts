@@ -6,30 +6,28 @@ import type { ProtocolType } from './types.js';
 export function detectProtocol(
   response: Response,
   preference: ProtocolType = 'auto',
-): 'x402' | 'mpp' | 'xrpl' | 'unknown' {
-  const hasX402 =
-    response.headers.has('payment-required') ||
-    response.headers.has('x-payment-required');
-
-  const hasMpp =
-    response.headers.get('www-authenticate')?.toLowerCase().includes('payment') ?? false;
-
+): 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'unknown' {
+  const paymentHeader = response.headers.get('payment-required') ?? response.headers.get('x-payment-required') ?? '';
+  const authHeader = response.headers.get('www-authenticate') ?? '';
+  const hasX402 = !!paymentHeader;
+  const hasMpp = authHeader.toLowerCase().includes('payment');
   const hasXrpl = response.headers.has('x-xrpl-payment-required');
 
   if (hasXrpl) return 'xrpl';
 
-  // Check if payment-required contains xrpl network
-  if (hasX402 && preference === 'xrpl') {
+  // Stellar x402: payment-required header with stellar: network
+  if (hasX402) {
     try {
-      const header = response.headers.get('payment-required') ?? '';
-      const decoded = JSON.parse(Buffer.from(header, 'base64').toString());
+      const decoded = JSON.parse(Buffer.from(paymentHeader, 'base64').toString());
+      if (decoded.accepts?.[0]?.network?.startsWith('stellar:')) return 'stellar-x402';
       if (decoded.accepts?.[0]?.network?.startsWith('xrpl:')) return 'xrpl';
-    } catch { /* not xrpl */ }
+    } catch { /* not base64 JSON */ }
   }
 
-  if (hasX402 && hasMpp) {
-    return preference === 'mpp' ? 'mpp' : 'x402';
-  }
+  // Stellar MPP: www-authenticate with stellar keyword
+  if (hasMpp && authHeader.toLowerCase().includes('stellar')) return 'stellar-mpp';
+
+  if (hasX402 && hasMpp) return preference === 'mpp' ? 'mpp' : 'x402';
   if (hasX402) return 'x402';
   if (hasMpp) return 'mpp';
   return 'unknown';

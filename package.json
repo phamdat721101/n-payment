@@ -1,7 +1,7 @@
 {
   "name": "n-payment",
-  "version": "0.6.0",
-  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402 with service discovery, off-ramp, and OWS wallet security",
+  "version": "0.7.0",
+  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402, Stellar, Trustless Work escrow with service discovery and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -67,6 +67,8 @@
   },
   "peerDependencies": {
     "@open-wallet-standard/core": ">=0.1.0",
+    "@stellar/stellar-sdk": ">=12.0.0",
+    "@stellar/mpp": ">=0.1.0",
     "@x402/core": ">=0.1.0",
     "@x402/evm": ">=0.1.0",
     "@x402/fetch": ">=0.1.0",
@@ -75,6 +77,12 @@
   },
   "peerDependenciesMeta": {
     "@open-wallet-standard/core": {
+      "optional": true
+    },
+    "@stellar/stellar-sdk": {
+      "optional": true
+    },
+    "@stellar/mpp": {
       "optional": true
     },
     "@x402/core": {

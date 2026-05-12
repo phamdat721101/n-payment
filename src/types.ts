@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -11,7 +11,9 @@ export type ChainKey =
   | 'tempo-mainnet'
   | 'base-mainnet'
   | 'xrpl-testnet'
-  | 'xrpl-mainnet';
+  | 'xrpl-mainnet'
+  | 'stellar-testnet'
+  | 'stellar-mainnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -49,6 +51,12 @@ export interface BtcLendingConfig {
   collateralRatio?: number;
 }
 
+export interface StellarConfig {
+  secretKey?: string;
+  publicKey?: string;
+  trustlessWork?: { apiUrl?: string; apiKey?: string };
+}
+
 export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
@@ -59,6 +67,7 @@ export interface NPaymentConfig {
   goat?: GoatCredentials;
   btcLending?: BtcLendingConfig;
   xrpl?: XrplConfig;
+  stellar?: StellarConfig;
   analytics?: { plugins?: AnalyticsPlugin[] };
 }
 
