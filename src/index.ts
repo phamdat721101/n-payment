@@ -2,7 +2,7 @@
 export type {
   ProtocolType, ChainKey, ChainConfig, NPaymentConfig, GoatCredentials,
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
-  OWSConfig, BtcLendingConfig,
+  OWSConfig, BtcLendingConfig, XrplConfig,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -45,6 +45,18 @@ export { OffRampClient, MockMoonPayAdapter } from './offramp/index.js';
 
 // ─── Faucet ──────────────────────────────────────────────────────────────────
 export { TestnetFaucet } from './faucet.js';
+
+// ─── XRPL (Ripple) ──────────────────────────────────────────────────────────
+export { XrplClient, createXrplClient } from './xrpl/client.js';
+export type { XrplClientConfig } from './xrpl/client.js';
+export { XrplWallet } from './xrpl/wallet.js';
+export { XrplConnection } from './xrpl/connection.js';
+export { XrplVaultClient } from './xrpl/vault.js';
+export type { VaultCreateOptions, VaultInfo } from './xrpl/vault.js';
+export { DiaOracleClient } from './xrpl/oracle.js';
+export type { OraclePrice } from './xrpl/oracle.js';
+export { ensureTrustLine, sendRLUSD, getRLUSDBalance } from './xrpl/payments.js';
+export { XrplAdapter } from './adapters/xrpl.js';
 
 // ─── Transactor ──────────────────────────────────────────────────────────────
 export { ViemTransactor } from './transactor.js';

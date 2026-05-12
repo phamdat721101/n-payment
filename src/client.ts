@@ -8,6 +8,8 @@ import { OWSWallet } from './ows/wallet.js';
 import { X402Adapter } from './adapters/x402.js';
 import { MppAdapter } from './adapters/mpp.js';
 import { GoatAdapter } from './adapters/goat.js';
+import { XrplAdapter } from './adapters/xrpl.js';
+import { XrplWallet } from './xrpl/wallet.js';
 import { BtcLendingVault } from './goat/lending.js';
 
 export class PaymentClient {
@@ -38,6 +40,13 @@ export class PaymentClient {
       const goatChain = getChainsForProtocol(config.chains, 'goat')[0];
       const vault = config.btcLending ? new BtcLendingVault(this.wallet, config.btcLending) : undefined;
       this.adapters.push(new GoatAdapter(config.goat, this.wallet, goatChain, vault));
+    }
+
+    const hasXrpl = getChainsForProtocol(config.chains, 'xrpl').length > 0;
+    if (hasXrpl && config.xrpl?.seed) {
+      const xrplChain = getChainsForProtocol(config.chains, 'xrpl')[0];
+      const xrplWallet = new XrplWallet({ seed: config.xrpl.seed, owsWallet: config.ows.wallet });
+      this.adapters.push(new XrplAdapter(xrplWallet, xrplChain));
     }
   }
 

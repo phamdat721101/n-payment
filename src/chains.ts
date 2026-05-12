@@ -68,6 +68,24 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     tokens: { USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
     facilitator: 'https://api.cdp.coinbase.com/platform/v2/x402',
   },
+  'xrpl-testnet': {
+    chainId: 0,
+    caip2: 'xrpl:testnet',
+    name: 'XRPL Testnet',
+    rpcUrl: 'https://s.altnet.rippletest.net:51234',
+    wsUrl: 'wss://s.altnet.rippletest.net:51233',
+    protocols: ['xrpl'],
+    tokens: { RLUSD: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', XRP: 'native' },
+  },
+  'xrpl-mainnet': {
+    chainId: 0,
+    caip2: 'xrpl:mainnet',
+    name: 'XRPL Mainnet',
+    rpcUrl: 'https://xrplcluster.com',
+    wsUrl: 'wss://xrplcluster.com',
+    protocols: ['xrpl'],
+    tokens: { RLUSD: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', XRP: 'native' },
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -9,16 +9,27 @@ export type ChainKey =
   | 'goat-mainnet'
   | 'tempo-testnet'
   | 'tempo-mainnet'
-  | 'base-mainnet';
+  | 'base-mainnet'
+  | 'xrpl-testnet'
+  | 'xrpl-mainnet';
 
 export interface ChainConfig {
   chainId: number;
   caip2: string;
   name: string;
   rpcUrl: string;
+  wsUrl?: string;
   protocols: string[];
   tokens: Record<string, string>;
   facilitator?: string;
+}
+
+// ─── XRPL ────────────────────────────────────────────────────────────────────
+
+export interface XrplConfig {
+  seed?: string;
+  server?: string;
+  network?: 'testnet' | 'mainnet';
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -47,6 +58,7 @@ export interface NPaymentConfig {
   mpp?: { currency?: string };
   goat?: GoatCredentials;
   btcLending?: BtcLendingConfig;
+  xrpl?: XrplConfig;
   analytics?: { plugins?: AnalyticsPlugin[] };
 }
 
@@ -81,6 +93,7 @@ export interface PaywallRouteConfig {
   description?: string;
   x402?: { payTo: string; asset?: string; network?: string };
   mpp?: { currency?: string; recipient?: string };
+  xrpl?: { payTo: string; asset?: string; network?: string };
 }
 
 export interface PaywallConfig {

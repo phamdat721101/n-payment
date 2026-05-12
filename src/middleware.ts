@@ -26,9 +26,11 @@ export function createPaywall(config: PaywallConfig) {
     // ── Check MPP payment (Authorization: Payment <credential>) ─────────
     const authHeader = req.headers['authorization'] as string | undefined;
     if (authHeader?.startsWith('Payment ') && route.mpp) {
-      // TODO: When mppx/server is available, verify credential on-chain here.
-      // For now, trust the credential presence (server-side verification is
-      // handled by mppx middleware when used directly).
+      return next();
+    }
+
+    // ── Check XRPL payment ──────────────────────────────────────────────
+    if (req.headers['x-payment-tx'] && req.headers['x-payment-network'] === 'xrpl' && route.xrpl) {
       return next();
     }
 
@@ -53,7 +55,18 @@ export function createPaywall(config: PaywallConfig) {
       );
     }
 
-    const protocols = [route.x402 && 'x402', route.mpp && 'mpp'].filter(Boolean);
+    if (route.xrpl) {
+      const network = route.xrpl.network ?? 'xrpl:testnet';
+      const challenge = Buffer.from(JSON.stringify({
+        x402Version: 2,
+        accepts: [{ scheme: 'exact', network, maxAmountRequired: route.price, asset: route.xrpl.asset ?? 'RLUSD', payTo: route.xrpl.payTo }],
+      })).toString('base64');
+      res.setHeader('x-xrpl-payment-required', challenge);
+      // Also set payment-required for unified detection
+      if (!route.x402) res.setHeader('payment-required', challenge);
+    }
+
+    const protocols = [route.x402 && 'x402', route.mpp && 'mpp', route.xrpl && 'xrpl'].filter(Boolean);
     res.status(402).json({ error: 'Payment required', protocols });
   };
 }

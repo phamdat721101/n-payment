@@ -1,6 +1,6 @@
 {
   "name": "n-payment",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402 with service discovery, off-ramp, and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -70,7 +70,8 @@
     "@x402/core": ">=0.1.0",
     "@x402/evm": ">=0.1.0",
     "@x402/fetch": ">=0.1.0",
-    "mppx": ">=0.1.0"
+    "mppx": ">=0.1.0",
+    "xrpl": ">=4.0.0"
   },
   "peerDependenciesMeta": {
     "@open-wallet-standard/core": {
@@ -86,6 +87,9 @@
       "optional": true
     },
     "mppx": {
+      "optional": true
+    },
+    "xrpl": {
       "optional": true
     }
   }
