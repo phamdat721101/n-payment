@@ -13,7 +13,9 @@ export type ChainKey =
   | 'xrpl-testnet'
   | 'xrpl-mainnet'
   | 'stellar-testnet'
-  | 'stellar-mainnet';
+  | 'stellar-mainnet'
+  | 'solana-mainnet'
+  | 'solana-devnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -62,13 +64,25 @@ export interface NPaymentConfig {
   ows: OWSConfig;
   protocol?: ProtocolType;
   autoFaucet?: boolean;
-  x402?: { facilitatorUrl?: string };
+  x402?: { facilitatorUrl?: string; usePermit2?: boolean };
   mpp?: { currency?: string };
   goat?: GoatCredentials;
   btcLending?: BtcLendingConfig;
   xrpl?: XrplConfig;
   stellar?: StellarConfig;
   analytics?: { plugins?: AnalyticsPlugin[] };
+  // v0.8: Circle Gateway nanopayments
+  circle?: { apiKey: string; environment?: 'sandbox' | 'production'; walletId?: string };
+  // v0.8: Solana x402
+  solana?: { rpcUrl?: string; keypair?: string; facilitator?: string };
+  // v0.8: Policy engine
+  policy?: { maxPerTransaction?: bigint; maxPerHour?: bigint; maxPerDay?: bigint; rateLimit?: { maxRequests: number; windowMs: number }; blocklist?: string[] };
+  // v0.8: AP2 protocol
+  ap2?: { agentId: string; signingKey?: string };
+  // v0.8: Batch settlement
+  batchSettlement?: { enabled?: boolean; escrowContract?: string; autoSettleThreshold?: number };
+  // v0.8: Streaming payments
+  streaming?: { defaultInterval?: number; autoRenew?: boolean };
 }
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────

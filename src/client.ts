@@ -14,17 +14,27 @@ import { StellarX402Adapter } from './adapters/stellar-x402.js';
 import { StellarMppAdapter } from './adapters/stellar-mpp.js';
 import { StellarWallet } from './stellar/wallet.js';
 import { BtcLendingVault } from './goat/lending.js';
+import { CircleGatewayAdapter } from './adapters/circle-gateway.js';
+import { SolanaX402Adapter } from './adapters/solana-x402.js';
+import { PolicyEngine, AuditLog, SpendingGuard } from './policy/index.js';
 
 export class PaymentClient {
   private adapters: PaymentAdapter[] = [];
   private analytics: AnalyticsEmitter;
   private config: NPaymentConfig;
+  private guard?: SpendingGuard;
   readonly wallet: OWSWallet;
 
   constructor(config: NPaymentConfig) {
     this.config = createConfig(config);
     this.analytics = new AnalyticsEmitter(config.analytics?.plugins);
     this.wallet = new OWSWallet(config.ows);
+
+    // Policy engine (v0.8)
+    if (config.policy) {
+      const engine = PolicyEngine.fromConfig(config.policy);
+      this.guard = new SpendingGuard(engine, new AuditLog());
+    }
 
     const proto = this.config.protocol ?? 'auto';
     const hasX402 = getChainsForProtocol(config.chains, 'x402').length > 0;
@@ -60,6 +70,16 @@ export class PaymentClient {
       if (hasStellarX402) this.adapters.push(new StellarX402Adapter(stellarWallet, stellarChain));
       if (hasStellarMpp) this.adapters.push(new StellarMppAdapter(stellarWallet, stellarChain));
     }
+
+    // Circle Gateway nanopayments (v0.8)
+    if (config.circle) {
+      this.adapters.push(new CircleGatewayAdapter(config.circle));
+    }
+
+    // Solana x402 (v0.8)
+    if (config.solana) {
+      this.adapters.push(new SolanaX402Adapter(config.solana));
+    }
   }
 
   async fetchWithPayment(url: string, init?: RequestInit): Promise<Response> {
@@ -79,8 +99,17 @@ export class PaymentClient {
       );
     }
 
+    // Policy check (v0.8)
+    if (this.guard) {
+      const decision = this.guard.check({ url, amount: 0n, chain: this.config.chains[0] });
+      if (!decision.allowed) {
+        throw new AdapterNotFoundError(`Policy denied: ${decision.reason}`, 'POLICY_DENIED');
+      }
+    }
+
     try {
       const result = await adapter.pay(url, init, response);
+      if (this.guard) this.guard.recordPayment({ url, amount: 0n, chain: this.config.chains[0] });
       this.analytics.emit({
         protocol: adapter.protocol, chain: this.config.chains[0], url,
         success: true, durationMs: Date.now() - start, timestamp: Date.now(),
@@ -94,6 +123,11 @@ export class PaymentClient {
       });
       throw err;
     }
+  }
+
+  /** Get the spending guard for audit access */
+  getGuard(): SpendingGuard | undefined {
+    return this.guard;
   }
 }
 

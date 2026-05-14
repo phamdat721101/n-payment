@@ -90,3 +90,40 @@ export type {
   AgentProviderConfig, AgentClientConfig,
   RoutingStrategy, ProviderCandidate, RouterConfig,
 } from './agent/index.js';
+
+// ─── Settlement (v0.8) ───────────────────────────────────────────────────────
+export {
+  BatchSettlementManager, StreamingPaymentManager, Permit2Signer,
+} from './settlement/index.js';
+
+export type {
+  BatchSessionConfig, BatchVoucher, BatchSession,
+  StreamConfig, StreamSession, Permit2Params,
+} from './settlement/index.js';
+
+// ─── Policy (v0.8) ──────────────────────────────────────────────────────────
+export {
+  PolicyEngine, AuditLog, SpendingGuard,
+} from './policy/index.js';
+
+export type {
+  PolicyRule, PolicyDecision, PaymentRequest, AuditEntry, PolicyConfig,
+} from './policy/index.js';
+
+// ─── AP2 Protocol (v0.8) ────────────────────────────────────────────────────
+export {
+  AP2Client, VerifiableIntentSigner,
+} from './ap2/index.js';
+
+export type {
+  AP2Config, CheckoutMandate, PaymentMandate, VerifiableIntent,
+  MandateConstraints, CartDetails,
+} from './ap2/index.js';
+
+// ─── Circle Gateway (v0.8) ──────────────────────────────────────────────────
+export { CircleGatewayAdapter } from './adapters/circle-gateway.js';
+export type { CircleGatewayConfig } from './adapters/circle-gateway.js';
+
+// ─── Solana x402 (v0.8) ─────────────────────────────────────────────────────
+export { SolanaX402Adapter } from './adapters/solana-x402.js';
+export type { SolanaX402Config } from './adapters/solana-x402.js';

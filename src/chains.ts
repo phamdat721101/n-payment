@@ -104,6 +104,24 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     tokens: { USDC: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75' },
     facilitator: 'https://channels.openzeppelin.com/x402',
   },
+  'solana-mainnet': {
+    chainId: 0,
+    caip2: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    name: 'Solana',
+    rpcUrl: 'https://api.mainnet-beta.solana.com',
+    protocols: ['x402-solana'],
+    tokens: { USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+    facilitator: 'https://api.cdp.coinbase.com/platform/v2/x402',
+  },
+  'solana-devnet': {
+    chainId: 0,
+    caip2: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+    name: 'Solana Devnet',
+    rpcUrl: 'https://api.devnet.solana.com',
+    protocols: ['x402-solana'],
+    tokens: { USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' },
+    facilitator: 'https://x402.org/facilitator',
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {
