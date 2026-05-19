@@ -13,6 +13,9 @@ import { XrplWallet } from './xrpl/wallet.js';
 import { StellarX402Adapter } from './adapters/stellar-x402.js';
 import { StellarMppAdapter } from './adapters/stellar-mpp.js';
 import { StellarWallet } from './stellar/wallet.js';
+import { KeypairStellarSigner } from './stellar/signer.js';
+import { StellarChannelsClient } from './stellar/channels-client.js';
+import { StellarSessionClient, type StellarSessionClientConfig } from './stellar/session.js';
 import { BtcLendingVault } from './goat/lending.js';
 import { CircleGatewayAdapter } from './adapters/circle-gateway.js';
 import { SolanaX402Adapter } from './adapters/solana-x402.js';
@@ -64,13 +67,39 @@ export class PaymentClient {
       this.adapters.push(new XrplAdapter(xrplWallet, xrplChain));
     }
 
+    // Stellar v0.10 — soft credential-less mode (mirrors Morph pattern)
     const hasStellarX402 = getChainsForProtocol(config.chains, 'stellar-x402').length > 0;
     const hasStellarMpp = getChainsForProtocol(config.chains, 'stellar-mpp').length > 0;
-    if ((hasStellarX402 || hasStellarMpp) && config.stellar?.secretKey) {
-      const stellarWallet = new StellarWallet({ secretKey: config.stellar.secretKey });
+    if (hasStellarX402 || hasStellarMpp) {
       const stellarChain = getChainsForProtocol(config.chains, 'stellar-x402')[0] ?? getChainsForProtocol(config.chains, 'stellar-mpp')[0];
-      if (hasStellarX402) this.adapters.push(new StellarX402Adapter(stellarWallet, stellarChain));
-      if (hasStellarMpp) this.adapters.push(new StellarMppAdapter(stellarWallet, stellarChain));
+      const stellarCfg = config.stellar;
+      if (stellarCfg?.secretKey) {
+        const isMainnet = stellarChain === 'stellar-mainnet';
+        // Lazy signer init via promise — adapters await getAddressAsync internally
+        const signer = new KeypairStellarSigner(stellarCfg.secretKey, stellarCfg.publicKey);
+        // Resolve address eagerly so adapter has it ready (fire-and-forget; failures throw on first use)
+        void KeypairStellarSigner.fromSecret(stellarCfg.secretKey).then((s) => {
+          (signer as { address: string }).address = s.address;
+        }).catch(() => {/* deferred to first sign call */});
+        const channelsClient = new StellarChannelsClient({
+          apiKey: stellarCfg.channelsApiKey,
+          baseUrl: stellarCfg.facilitatorUrl,
+          isMainnet,
+        });
+        if (hasStellarX402) this.adapters.push(new StellarX402Adapter(signer, stellarChain, channelsClient, stellarCfg.rpcUrl));
+        if (hasStellarMpp) this.adapters.push(new StellarMppAdapter(signer, stellarChain));
+      } else if (stellarCfg?.strict) {
+        throw new AdapterNotFoundError(
+          'Stellar chain configured with strict mode but stellar.secretKey missing',
+          'STELLAR_NO_SECRET',
+          'Provide stellar: { secretKey: "S..." } or set strict: false for credential-less dev',
+        );
+      } else {
+        console.warn(
+          '[n-payment] Stellar chain configured without stellar.secretKey — Stellar adapters disabled. ' +
+          'Pass stellar: { secretKey: "S..." } or use FreighterStellarSigner directly in browser.',
+        );
+      }
     }
 
     // Circle Gateway nanopayments (v0.8)
@@ -165,6 +194,14 @@ export class PaymentClient {
   /** Get the spending guard for audit access */
   getGuard(): SpendingGuard | undefined {
     return this.guard;
+  }
+
+  /**
+   * Create an MPP Session client for high-frequency off-chain micropayments via the
+   * one-way-channel Soroban contract. Channel must already be deployed and pre-funded.
+   */
+  createStellarSession(config: StellarSessionClientConfig): StellarSessionClient {
+    return new StellarSessionClient(config);
   }
 }
 

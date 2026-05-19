@@ -210,6 +210,63 @@ const client = createPaymentClient({
 const res = await client.fetchWithPayment('https://api.example.com/data');
 ```
 
+## Quick Start — Stellar Agentic Payments (v0.10)
+
+n-payment v0.10 ships first-class support for Stellar's full agentic payment stack: x402, MPP Charge (one-time), and **MPP Session** (off-chain payment channels via the `one-way-channel` Soroban contract — true sub-cent micropayments without per-call gas).
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['stellar-testnet'],
+  ows: { wallet: 'my-agent' },
+  stellar: {
+    secretKey: process.env.STELLAR_SECRET,        // S...
+    channelsApiKey: process.env.OZ_API_KEY,       // optional — only for OZ Channels mainnet
+  },
+});
+
+// Pay any Stellar-protected API (x402 or MPP Charge auto-detected)
+const res = await client.fetchWithPayment('https://api.example.com/data', undefined, {
+  referenceKey: 'ORD-2026-001',
+});
+```
+
+**Credential-less testnet:** Omit `secretKey` and the SDK warns and disables the Stellar adapters (other chains still work). Default facilitator is Coinbase free testnet (sponsored fees).
+
+**MPP Session — high-frequency micropayments:**
+
+```typescript
+const session = client.createStellarSession({
+  channel: 'C...',                              // pre-deployed one-way-channel contract
+  commitmentSecretHex: process.env.COMMITMENT_SECRET, // 64-char hex ed25519 seed
+  chainKey: 'stellar-testnet',
+});
+
+// Sign 100 off-chain commitments — zero on-chain tx, zero fees
+for (let i = 0; i < 100; i++) {
+  const { credential } = await session.signCommitment(10_000n); // 0.001 USDC each
+  await fetch(url, { headers: { Authorization: `Payment ${credential}` } });
+}
+// Server settles all 100 with one close() transaction when convenient
+```
+
+**Browser wallet (Freighter):**
+
+```typescript
+import { FreighterStellarSigner, StellarX402Adapter } from 'n-payment';
+
+const signer = await FreighterStellarSigner.connect(); // prompts user for wallet access
+const adapter = new StellarX402Adapter(signer, 'stellar-testnet');
+```
+
+**Try it locally:**
+```bash
+pnpm tsx examples/stellar-demo.ts charge-server   # paywall on :3001
+pnpm tsx examples/stellar-demo.ts charge-client   # buyer agent
+pnpm tsx examples/stellar-demo.ts session         # 100 off-chain commitments
+```
+
 ## Quick Start — Morph Network (v0.9)
 
 Pay APIs on Morph with HMAC-signed x402 facilitator + per-order Reference Key tracking:

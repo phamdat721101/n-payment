@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'morph-x402' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -56,9 +56,24 @@ export interface BtcLendingConfig {
 }
 
 export interface StellarConfig {
+  /** Server-side secret key (S...). Optional: agents in browsers use FreighterStellarSigner instead. */
   secretKey?: string;
+  /** Public key cache. Derived from secretKey when present. */
   publicKey?: string;
+  /** Trustless Work integration (escrow). */
   trustlessWork?: { apiUrl?: string; apiKey?: string };
+  /** OpenZeppelin Channels facilitator API key (mainnet). Get one at https://channels.openzeppelin.com/gen */
+  channelsApiKey?: string;
+  /** Override facilitator base URL. Default: Coinbase x402 (testnet, free) or OZ Channels (mainnet, requires apiKey). */
+  facilitatorUrl?: string;
+  /** Server-side fee payer secret key (S...) for sponsored fees in MPP Charge. Optional. */
+  feePayerSecret?: string;
+  /** Stellar RPC URL override. Default: Soroban testnet/mainnet. */
+  rpcUrl?: string;
+  /** Override SEP-41 token contract for x402 / MPP Charge (default: USDC SAC). */
+  usdcSac?: string;
+  /** Throw on missing credentials instead of warning. */
+  strict?: boolean;
 }
 
 /**

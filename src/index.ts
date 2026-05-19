@@ -56,6 +56,20 @@ export type { TrustlessJob, TrustlessJobStatus, TrustlessEscrowConfig } from './
 export { StellarX402Adapter } from './adapters/stellar-x402.js';
 export { StellarMppAdapter } from './adapters/stellar-mpp.js';
 
+// ─── Stellar Agentic Payments (v0.10) ────────────────────────────────────────
+export { KeypairStellarSigner, FreighterStellarSigner } from './stellar/signer.js';
+export type { StellarSigner } from './stellar/signer.js';
+export { StellarChannelsClient } from './stellar/channels-client.js';
+export type {
+  StellarChannelsClientConfig, StellarSupportedKind, StellarSupportedResponse,
+  StellarVerifyResponse, StellarSettleResponse,
+} from './stellar/channels-client.js';
+export { StellarSessionClient, StellarSessionServer } from './stellar/session.js';
+export type {
+  StellarSessionClientConfig, StellarSessionServerConfig, VoucherCredential,
+} from './stellar/session.js';
+export type { MppChargeMode } from './adapters/stellar-mpp.js';
+
 // ─── XRPL (Ripple) ──────────────────────────────────────────────────────────
 export { XrplClient, createXrplClient } from './xrpl/client.js';
 export type { XrplClientConfig } from './xrpl/client.js';
