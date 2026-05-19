@@ -36,6 +36,10 @@ export interface PaymentRequest {
   chain: string;
   tool?: string;
   recipient?: string;
+  /** Merchant order identifier — first-class on Morph (Reference Key); recorded in audit on all chains. */
+  referenceKey?: string;
+  /** Arbitrary key/value metadata persisted in audit log. */
+  metadata?: Record<string, string>;
 }
 
 export interface AuditEntry {
@@ -47,6 +51,8 @@ export interface AuditEntry {
   tool?: string;
   url?: string;
   decision: PolicyDecision;
+  referenceKey?: string;
+  metadata?: Record<string, string>;
 }
 
 export interface PolicyConfig {
@@ -183,6 +189,11 @@ export class AuditLog {
     });
   }
 
+  /** Lookup all audit entries tagged with a specific merchant reference key. */
+  queryByReferenceKey(referenceKey: string): AuditEntry[] {
+    return this.entries.filter(e => e.referenceKey === referenceKey);
+  }
+
   getSpendingSummary(periodMs = 86400_000): { total: bigint; count: number } {
     const since = Date.now() - periodMs;
     const relevant = this.entries.filter(e => e.type === 'payment' && e.timestamp >= since);
@@ -217,6 +228,8 @@ export class SpendingGuard {
       chain: request.chain,
       url: request.url,
       tool: request.tool,
+      referenceKey: request.referenceKey,
+      metadata: request.metadata,
       decision: { allowed: true },
     });
   }

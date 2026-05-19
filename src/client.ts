@@ -1,5 +1,5 @@
-import type { NPaymentConfig, PaymentAdapter } from './types.js';
-import { getChainsForProtocol } from './chains.js';
+import type { NPaymentConfig, PaymentAdapter, PaymentContext } from './types.js';
+import { CHAINS, getChainsForProtocol } from './chains.js';
 import { createConfig } from './config.js';
 import { detectProtocol } from './detect.js';
 import { AdapterNotFoundError } from './errors.js';
@@ -16,6 +16,8 @@ import { StellarWallet } from './stellar/wallet.js';
 import { BtcLendingVault } from './goat/lending.js';
 import { CircleGatewayAdapter } from './adapters/circle-gateway.js';
 import { SolanaX402Adapter } from './adapters/solana-x402.js';
+import { MorphX402Adapter } from './adapters/morph-x402.js';
+import { MorphX402Client } from './morph/client.js';
 import { PolicyEngine, AuditLog, SpendingGuard } from './policy/index.js';
 
 export class PaymentClient {
@@ -80,9 +82,36 @@ export class PaymentClient {
     if (config.solana) {
       this.adapters.push(new SolanaX402Adapter(config.solana));
     }
+
+    // Morph x402 (v0.9) — soft credential-less mode: warn-and-skip when keys missing
+    const hasMorph = getChainsForProtocol(config.chains, 'morph-x402').length > 0;
+    if (hasMorph) {
+      const morphChain = getChainsForProtocol(config.chains, 'morph-x402')[0];
+      const morphCfg = config.morph;
+      const hasCreds = !!(morphCfg?.accessKey && morphCfg?.secretKey);
+      if (hasCreds) {
+        const morphClient = new MorphX402Client({
+          accessKey: morphCfg!.accessKey,
+          secretKey: morphCfg!.secretKey,
+          baseUrl: morphCfg!.facilitatorUrl ?? CHAINS[morphChain].facilitator,
+        });
+        this.adapters.push(new MorphX402Adapter(this.wallet, morphClient, morphChain));
+      } else if (morphCfg?.strict) {
+        throw new AdapterNotFoundError(
+          'Morph chain configured with strict mode but accessKey/secretKey missing',
+          'MORPH_NO_CREDENTIALS',
+          'Register at https://morph-rails.morph.network/x402 to obtain credentials',
+        );
+      } else {
+        console.warn(
+          '[n-payment] Morph chain configured without accessKey/secretKey — Morph adapter disabled. ' +
+          'Register at https://morph-rails.morph.network/x402 to enable.',
+        );
+      }
+    }
   }
 
-  async fetchWithPayment(url: string, init?: RequestInit): Promise<Response> {
+  async fetchWithPayment(url: string, init?: RequestInit, opts?: PaymentContext): Promise<Response> {
     const start = Date.now();
     const response = await fetch(url, init);
     if (response.status !== 402) return response;
@@ -99,25 +128,33 @@ export class PaymentClient {
       );
     }
 
-    // Policy check (v0.8)
+    const chain = this.config.chains[0];
+
+    // Policy check (v0.8) — referenceKey/metadata flow into audit
     if (this.guard) {
-      const decision = this.guard.check({ url, amount: 0n, chain: this.config.chains[0] });
+      const decision = this.guard.check({
+        url, amount: 0n, chain,
+        referenceKey: opts?.referenceKey, metadata: opts?.metadata,
+      });
       if (!decision.allowed) {
         throw new AdapterNotFoundError(`Policy denied: ${decision.reason}`, 'POLICY_DENIED');
       }
     }
 
     try {
-      const result = await adapter.pay(url, init, response);
-      if (this.guard) this.guard.recordPayment({ url, amount: 0n, chain: this.config.chains[0] });
+      const result = await adapter.pay(url, init, response, opts);
+      if (this.guard) this.guard.recordPayment({
+        url, amount: 0n, chain,
+        referenceKey: opts?.referenceKey, metadata: opts?.metadata,
+      });
       this.analytics.emit({
-        protocol: adapter.protocol, chain: this.config.chains[0], url,
+        protocol: adapter.protocol, chain, url,
         success: true, durationMs: Date.now() - start, timestamp: Date.now(),
       });
       return result;
     } catch (err) {
       this.analytics.emit({
-        protocol: adapter.protocol, chain: this.config.chains[0], url,
+        protocol: adapter.protocol, chain, url,
         success: false, durationMs: Date.now() - start, timestamp: Date.now(),
         error: (err as Error).message,
       });

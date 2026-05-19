@@ -122,6 +122,30 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     tokens: { USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' },
     facilitator: 'https://x402.org/facilitator',
   },
+  'morph-mainnet': {
+    chainId: 2818,
+    caip2: 'eip155:2818',
+    name: 'Morph',
+    rpcUrl: 'https://rpc-quicknode.morphl2.io',
+    protocols: ['morph-x402'],
+    tokens: {
+      USDC: '0xe34c91815d7fc18A9e2148bcD4241d0a5848b693',
+      USDT0: '0xe7cd86e13AC4309349F30B3435a9d337750fC82D',
+      BGB: '0x389C08Bc23A7317000a1FD76c7c5B0cb0b4640b5',
+    },
+    facilitator: 'https://morph-rails.morph.network/x402',
+  },
+  'morph-hoodi-testnet': {
+    chainId: 2910,
+    caip2: 'eip155:2910',
+    name: 'Morph Hoodi Testnet',
+    rpcUrl: 'https://rpc-quicknode-holesky.morphl2.io',
+    protocols: ['morph-x402'],
+    tokens: {
+      USDC: '0xe34c91815d7fc18A9e2148bcD4241d0a5848b693',
+    },
+    facilitator: 'https://morph-rails-hoodi.morph.network/x402',
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

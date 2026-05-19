@@ -62,7 +62,7 @@ const data = await response.json();
 
 ---
 
-## Supported Chains (13)
+## Supported Chains (15)
 
 | Chain | Key | Protocol | Use Case |
 |-------|-----|----------|----------|
@@ -79,6 +79,8 @@ const data = await response.json();
 | XRPL Testnet | `xrpl-testnet` | XRPL | Testing |
 | Solana | `solana-mainnet` | x402 | High-speed payments |
 | Solana Devnet | `solana-devnet` | x402 | Testing |
+| **Morph** | `morph-mainnet` | Morph x402 | **Agentic payments, Reference Key** |
+| **Morph Hoodi Testnet** | `morph-hoodi-testnet` | Morph x402 | **Testing** |
 
 ---
 
@@ -206,6 +208,43 @@ const client = createPaymentClient({
 
 // Gas-free payments down to $0.000001 via Circle Gateway
 const res = await client.fetchWithPayment('https://api.example.com/data');
+```
+
+## Quick Start — Morph Network (v0.9)
+
+Pay APIs on Morph with HMAC-signed x402 facilitator + per-order Reference Key tracking:
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['morph-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.PRIVATE_KEY },
+  morph: {
+    accessKey: process.env.MORPH_ACCESS_KEY,    // morph_ak_...
+    secretKey: process.env.MORPH_SECRET_KEY,    // morph_sk_...
+  },
+});
+
+// Pay with a merchant order ID — flows through to retry header + audit log
+const res = await client.fetchWithPayment('https://api.example.com/data', undefined, {
+  referenceKey: 'ORD-2026-001',
+  metadata: { customer: 'alice' },
+});
+
+// Reconcile — query audit by reference key
+const entries = client.getGuard()?.getAudit().queryByReferenceKey('ORD-2026-001');
+```
+
+**Credential-less dev mode:** Configure Morph chain without `accessKey`/`secretKey` for development; the SDK warns and disables the Morph adapter without throwing. Get keys at [Morph x402 Console](https://morph-rails.morph.network/x402).
+
+**AltFee (gas-in-stablecoin):** Type-0x7F transaction support is **scaffolded for v0.10** — setting `morph.altFee.enabled` throws `NOT_IMPLEMENTED` with a roadmap link.
+
+**Try it locally:**
+```bash
+pnpm tsx examples/morph-demo.ts server   # merchant paywall on :3030
+pnpm tsx examples/morph-demo.ts client   # buyer agent with referenceKey
+pnpm tsx examples/morph-demo.ts bridge   # same code, Morph + Base
 ```
 
 ## Quick Start — AP2 Protocol (Verifiable Authorization)

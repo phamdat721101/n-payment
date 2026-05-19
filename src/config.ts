@@ -33,5 +33,13 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
     throw new NPaymentError('btcLending.vaultAddress is required', 'INVALID_CONFIG', 'Pass btcLending: { vaultAddress: "0x..." }');
   }
 
+  if (input.morph?.altFee?.enabled) {
+    throw new NPaymentError(
+      'AltFee (gas-in-stablecoin) is not yet implemented — planned for v0.10',
+      'NOT_IMPLEMENTED',
+      'See https://docs.morph.network/docs/morph-rails/infra-solutions/altfee — Type-0x7F transaction support coming next release',
+    );
+  }
+
   return { protocol: 'auto', ...input };
 }

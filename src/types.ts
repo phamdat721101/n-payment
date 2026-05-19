@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'morph-x402' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -15,7 +15,9 @@ export type ChainKey =
   | 'stellar-testnet'
   | 'stellar-mainnet'
   | 'solana-mainnet'
-  | 'solana-devnet';
+  | 'solana-devnet'
+  | 'morph-mainnet'
+  | 'morph-hoodi-testnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -59,6 +61,23 @@ export interface StellarConfig {
   trustlessWork?: { apiUrl?: string; apiKey?: string };
 }
 
+/**
+ * Morph Network configuration. v0.9 supports x402 facilitator with HMAC auth.
+ * AltFee (gas-in-stablecoin Type-0x7F transactions) is scaffolded only — enabling it throws NOT_IMPLEMENTED.
+ */
+export interface MorphConfig {
+  /** Access Key from Morph x402 Console (morph_ak_...). Optional in credential-less dev mode. */
+  accessKey?: string;
+  /** Secret Key from Morph x402 Console (morph_sk_...). Optional in credential-less dev mode. */
+  secretKey?: string;
+  /** Override facilitator base URL (defaults to chain.facilitator). */
+  facilitatorUrl?: string;
+  /** Throw on missing credentials instead of warning. */
+  strict?: boolean;
+  /** AltFee gas abstraction config — v0.10 feature, throws NOT_IMPLEMENTED if enabled. */
+  altFee?: { enabled?: boolean; token?: 'USDC' | 'USDT0' | 'BGB' };
+}
+
 export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
@@ -70,6 +89,7 @@ export interface NPaymentConfig {
   btcLending?: BtcLendingConfig;
   xrpl?: XrplConfig;
   stellar?: StellarConfig;
+  morph?: MorphConfig;
   analytics?: { plugins?: AnalyticsPlugin[] };
   // v0.8: Circle Gateway nanopayments
   circle?: { apiKey: string; environment?: 'sandbox' | 'production'; walletId?: string };
@@ -87,10 +107,21 @@ export interface NPaymentConfig {
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────
 
+/**
+ * Per-call payment context. Forwarded from PaymentClient.fetchWithPayment to adapters.
+ * Used for merchant order tracking (referenceKey) and arbitrary metadata.
+ */
+export interface PaymentContext {
+  /** Merchant order identifier — first-class on Morph (Reference Key); recorded in audit on all chains. */
+  referenceKey?: string;
+  /** Arbitrary key/value metadata persisted in audit log. */
+  metadata?: Record<string, string>;
+}
+
 export interface PaymentAdapter {
   readonly protocol: string;
   detect(response: Response): boolean;
-  pay(url: string, init: RequestInit | undefined, response: Response): Promise<Response>;
+  pay(url: string, init: RequestInit | undefined, response: Response, ctx?: PaymentContext): Promise<Response>;
 }
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
@@ -117,6 +148,7 @@ export interface PaywallRouteConfig {
   x402?: { payTo: string; asset?: string; network?: string };
   mpp?: { currency?: string; recipient?: string };
   xrpl?: { payTo: string; asset?: string; network?: string };
+  morph?: { payTo: string; asset?: string; network?: string };
 }
 
 export interface PaywallConfig {

@@ -1,7 +1,7 @@
 {
   "name": "n-payment",
-  "version": "0.8.0",
-  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402, Stellar, XRPL, Circle Nanopayments, AP2, batch settlement, streaming payments with policy engine and OWS wallet security",
+  "version": "0.9.0",
+  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402, Stellar, XRPL, Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, batch settlement, streaming payments with policy engine and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -39,6 +39,9 @@
     "off-ramp",
     "base",
     "goat-network",
+    "morph-network",
+    "reference-key",
+    "agentic-payments",
     "ows"
   ],
   "license": "MIT",

@@ -34,13 +34,30 @@ export function createPaywall(config: PaywallConfig) {
       return next();
     }
 
+    // ── Check Morph payment (x402-compatible, identified by Morph CAIP-2) ─
+    const paymentNetwork = req.headers['x-payment-network'];
+    if (req.headers['x-payment-tx'] && route.morph &&
+        (paymentNetwork === 'eip155:2818' || paymentNetwork === 'eip155:2910')) {
+      return next();
+    }
+
     // ── No payment — return 402 with BOTH challenges ────────────────────
-    if (route.x402) {
+    if (route.x402 && !route.morph) {
       const network = route.x402.network ?? 'eip155:84532';
       const asset = route.x402.asset ?? CHAINS['base-sepolia'].tokens.USDC;
       const challenge = Buffer.from(JSON.stringify({
         x402Version: 2,
         accepts: [{ scheme: 'exact', network, maxAmountRequired: route.price, asset, payTo: route.x402.payTo }],
+      })).toString('base64');
+      res.setHeader('payment-required', challenge);
+    }
+
+    if (route.morph) {
+      const network = route.morph.network ?? 'eip155:2818';
+      const asset = route.morph.asset ?? CHAINS['morph-mainnet'].tokens.USDC;
+      const challenge = Buffer.from(JSON.stringify({
+        x402Version: 2,
+        accepts: [{ scheme: 'exact', network, maxAmountRequired: route.price, asset, payTo: route.morph.payTo }],
       })).toString('base64');
       res.setHeader('payment-required', challenge);
     }
@@ -66,7 +83,7 @@ export function createPaywall(config: PaywallConfig) {
       if (!route.x402) res.setHeader('payment-required', challenge);
     }
 
-    const protocols = [route.x402 && 'x402', route.mpp && 'mpp', route.xrpl && 'xrpl'].filter(Boolean);
+    const protocols = [route.x402 && !route.morph && 'x402', route.mpp && 'mpp', route.xrpl && 'xrpl', route.morph && 'morph-x402'].filter(Boolean);
     res.status(402).json({ error: 'Payment required', protocols });
   };
 }
@@ -102,7 +119,7 @@ export function createHealthEndpoint(config: PaywallConfig) {
       route,
       price: cfg.price,
       description: cfg.description,
-      protocols: [cfg.x402 && 'x402', cfg.mpp && 'mpp'].filter(Boolean),
+      protocols: [cfg.x402 && !cfg.morph && 'x402', cfg.mpp && 'mpp', cfg.morph && 'morph-x402'].filter(Boolean),
     }));
     res.status(200).json({ status: 'ok', routes });
   };

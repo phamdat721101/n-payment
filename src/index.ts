@@ -2,7 +2,7 @@
 export type {
   ProtocolType, ChainKey, ChainConfig, NPaymentConfig, GoatCredentials,
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
-  OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig,
+  OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig, MorphConfig, PaymentContext,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -127,3 +127,13 @@ export type { CircleGatewayConfig } from './adapters/circle-gateway.js';
 // ─── Solana x402 (v0.8) ─────────────────────────────────────────────────────
 export { SolanaX402Adapter } from './adapters/solana-x402.js';
 export type { SolanaX402Config } from './adapters/solana-x402.js';
+
+// ─── Morph Network (v0.9) ───────────────────────────────────────────────────
+export { MorphX402Adapter } from './adapters/morph-x402.js';
+export { MorphX402Client } from './morph/client.js';
+export { signMorphRequest, sortObjectDeep } from './morph/auth.js';
+export type {
+  MorphX402ClientConfig, MorphSupportedKind, MorphSupportedResponse,
+  MorphVerifyResponse, MorphSettleResponse,
+} from './morph/client.js';
+export type { MorphSignParams } from './morph/auth.js';
