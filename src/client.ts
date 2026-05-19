@@ -1,4 +1,4 @@
-import type { NPaymentConfig, PaymentAdapter, PaymentContext } from './types.js';
+import type { NPaymentConfig, PaymentAdapter, PaymentContext, ProxyAdapter } from './types.js';
 import { CHAINS, getChainsForProtocol } from './chains.js';
 import { createConfig } from './config.js';
 import { detectProtocol } from './detect.js';
@@ -22,9 +22,26 @@ import { SolanaX402Adapter } from './adapters/solana-x402.js';
 import { MorphX402Adapter } from './adapters/morph-x402.js';
 import { MorphX402Client } from './morph/client.js';
 import { PolicyEngine, AuditLog, SpendingGuard } from './policy/index.js';
+import { SpaceRouterAdapter } from './adapters/spacerouter.js';
+import { SpaceRouterClient } from './spacerouter/client.js';
+import { OWSSpaceRouterSigner, KeypairSpaceRouterSigner } from './spacerouter/signer.js';
+import type { Hex, Address } from 'viem';
+
+const SPACE_ROUTER_DEFAULTS = {
+  'creditcoin-mainnet': {
+    escrow: '0xC130F5D76f0b4Ce8FE2ceA0D2C2b8f53A39a5cd0',
+    token: '0x7ab7C6A935Ab2D1437398790C9C0660af62A80b9',
+  },
+  'creditcoin-testnet': {
+    // TBD — published with v1.5 testnet release. Override via spacerouter.escrowContract / tokenAddress.
+    escrow: '0x0000000000000000000000000000000000000000',
+    token: '0x0000000000000000000000000000000000000000',
+  },
+} as const;
 
 export class PaymentClient {
   private adapters: PaymentAdapter[] = [];
+  private proxyAdapters: ProxyAdapter[] = [];
   private analytics: AnalyticsEmitter;
   private config: NPaymentConfig;
   private guard?: SpendingGuard;
@@ -138,13 +155,109 @@ export class PaymentClient {
         );
       }
     }
+
+    // SpaceRouter (v0.11) — soft mode: warn-and-skip when peer-dep / config missing
+    const hasSpaceRouter = getChainsForProtocol(config.chains, 'spacerouter').length > 0;
+    if (hasSpaceRouter) {
+      const srChainKey = getChainsForProtocol(config.chains, 'spacerouter')[0];
+      const srChain = CHAINS[srChainKey];
+      const srCfg = config.spacerouter;
+      const defaults = SPACE_ROUTER_DEFAULTS[srChainKey as keyof typeof SPACE_ROUTER_DEFAULTS];
+      const escrowAddress = (srCfg?.escrowContract ?? defaults?.escrow) as Address | undefined;
+      const tokenAddress = (srCfg?.tokenAddress ?? defaults?.token ?? srChain.tokens.SPACE ?? srChain.tokens.SPC) as Address | undefined;
+      if (!escrowAddress || !tokenAddress) {
+        if (srCfg?.strict) {
+          throw new AdapterNotFoundError(
+            'SpaceRouter requires escrowContract and tokenAddress',
+            'SR_INVALID_CONFIG',
+            'Pass spacerouter.escrowContract and spacerouter.tokenAddress.',
+          );
+        }
+        console.warn('[n-payment] SpaceRouter chain configured without escrow/token addresses — adapter disabled.');
+      } else {
+        const privateKey = config.ows?.privateKey as Hex | undefined;
+        const signer = privateKey
+          ? new KeypairSpaceRouterSigner(privateKey)
+          : new OWSSpaceRouterSigner(this.wallet, srChain.chainId);
+        const srClient = new SpaceRouterClient({
+          chain: srChain,
+          signer,
+          escrowAddress,
+          tokenAddress,
+          privateKey,
+          gatewayUrl: srCfg?.gatewayUrl ?? srChain.facilitator,
+          gatewayMgmtUrl: srCfg?.gatewayMgmtUrl,
+          apiKey: srCfg?.apiKey,
+          region: srCfg?.region,
+          ipType: srCfg?.ipType,
+          autoEscrow: srCfg?.autoEscrow,
+          verify: srCfg?.verify,
+        });
+        this.proxyAdapters.push(new SpaceRouterAdapter(srClient));
+      }
+    }
   }
 
   async fetchWithPayment(url: string, init?: RequestInit, opts?: PaymentContext): Promise<Response> {
     const start = Date.now();
-    const response = await fetch(url, init);
+    const ctx = opts ?? {};
+    const chain = this.config.chains[0];
+
+    // Up-front policy check covers both bandwidth + payment intent (region/ipType/amount).
+    if (this.guard) {
+      const decision = this.guard.check({
+        url, amount: 0n, chain,
+        referenceKey: ctx.referenceKey, metadata: ctx.metadata,
+        region: ctx.region, ipType: ctx.ipType,
+      });
+      if (!decision.allowed) {
+        throw new AdapterNotFoundError(`Policy denied: ${decision.reason}`, 'POLICY_DENIED');
+      }
+    }
+
+    // ── Step 1: initial fetch — direct or via explicit proxy ──
+    let proxyUsed: ProxyAdapter | undefined;
+    let response: Response;
+
+    if (ctx.proxy === 'spacerouter') {
+      proxyUsed = this.proxyAdapters.find((p) => p.protocol === 'spacerouter');
+      if (!proxyUsed) {
+        throw new AdapterNotFoundError(
+          'No spacerouter adapter configured', 'NO_PROXY_ADAPTER',
+          'Add a creditcoin-* chain and spacerouter config to NPaymentConfig.',
+        );
+      }
+      response = await proxyUsed.route(url, init, ctx);
+    } else {
+      response = await fetch(url, init);
+
+      // ── Step 1b: smart fallback on 403/429/Cloudflare-block ──
+      if (ctx.proxy === 'auto' && this.proxyAdapters.length) {
+        const fallback = this.proxyAdapters.find((p) => p.detect(ctx, response));
+        if (fallback) {
+          response = await fallback.route(url, init, ctx);
+          proxyUsed = fallback;
+        }
+      }
+    }
+
+    // Audit-log bandwidth use whenever a proxy hop happened.
+    if (proxyUsed && this.guard) {
+      this.guard.recordBandwidth({
+        url, amount: 0n, chain,
+        region: ctx.region, ipType: ctx.ipType,
+        referenceKey: ctx.referenceKey, metadata: ctx.metadata,
+      });
+      this.analytics.emit({
+        protocol: proxyUsed.protocol, chain, url,
+        success: true, durationMs: Date.now() - start, timestamp: Date.now(),
+      });
+    }
+
+    // ── Step 2: not a paywall — return as-is ──
     if (response.status !== 402) return response;
 
+    // ── Step 3: 402 paywall — find payment adapter + settle ──
     const protocol = detectProtocol(response, this.config.protocol);
     const adapter =
       this.adapters.find((a) => a.protocol === protocol) ??
@@ -157,24 +270,11 @@ export class PaymentClient {
       );
     }
 
-    const chain = this.config.chains[0];
-
-    // Policy check (v0.8) — referenceKey/metadata flow into audit
-    if (this.guard) {
-      const decision = this.guard.check({
-        url, amount: 0n, chain,
-        referenceKey: opts?.referenceKey, metadata: opts?.metadata,
-      });
-      if (!decision.allowed) {
-        throw new AdapterNotFoundError(`Policy denied: ${decision.reason}`, 'POLICY_DENIED');
-      }
-    }
-
     try {
       const result = await adapter.pay(url, init, response, opts);
       if (this.guard) this.guard.recordPayment({
         url, amount: 0n, chain,
-        referenceKey: opts?.referenceKey, metadata: opts?.metadata,
+        referenceKey: ctx.referenceKey, metadata: ctx.metadata,
       });
       this.analytics.emit({
         protocol: adapter.protocol, chain, url,
@@ -194,6 +294,13 @@ export class PaymentClient {
   /** Get the spending guard for audit access */
   getGuard(): SpendingGuard | undefined {
     return this.guard;
+  }
+
+  /** Graceful shutdown — flushes any open proxy adapter resources (e.g. SpaceRouter receipts). */
+  async close(): Promise<void> {
+    for (const p of this.proxyAdapters) {
+      if (p.close) await p.close();
+    }
   }
 
   /**

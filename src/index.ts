@@ -3,6 +3,7 @@ export type {
   ProtocolType, ChainKey, ChainConfig, NPaymentConfig, GoatCredentials,
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
   OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig, MorphConfig, PaymentContext,
+  SpaceRouterConfig, SpaceRouterRegion, SpaceRouterIpType, ProxyAdapter,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -151,3 +152,19 @@ export type {
   MorphVerifyResponse, MorphSettleResponse,
 } from './morph/client.js';
 export type { MorphSignParams } from './morph/auth.js';
+
+// ─── SpaceRouter / SpaceCoin (v0.11) ────────────────────────────────────────
+export type {
+  SpaceRouterSigner, SpaceRouterReceipt,
+  SpaceRouterClientConfig, RoutedResponse,
+  EscrowClientConfig, WithdrawalRequest,
+  GatewayChallenge, GatewayClientConfig, ReceiptSchedulerConfig,
+  SignedReceiptEnvelope, SyncResult,
+} from './spacerouter/index.js';
+export {
+  SpaceRouterClient, SpaceRouterAdapter, SpaceRouterPeerDepMissingError,
+  SpaceRouterEscrowClient, SpaceRouterGatewayClient, SpaceRouterReceiptScheduler,
+  KeypairSpaceRouterSigner, OWSSpaceRouterSigner, BrowserSpaceRouterSigner,
+  EscrowEmptyError, WithdrawalLockedError, WithdrawalAlreadyPendingError,
+  spaceRouterDomain, SPACEROUTER_RECEIPT_TYPES,
+} from './spacerouter/index.js';

@@ -146,6 +146,32 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     },
     facilitator: 'https://morph-rails-hoodi.morph.network/x402',
   },
+  'creditcoin-mainnet': {
+    chainId: 102030,
+    caip2: 'eip155:102030',
+    name: 'Creditcoin',
+    rpcUrl: 'https://mainnet3.creditcoin.network',
+    protocols: ['spacerouter'],
+    tokens: {
+      SPACE: '0x7ab7C6A935Ab2D1437398790C9C0660af62A80b9',
+      // Native gas token. Use the zero-address sentinel — wallet flows treat this as native CTC.
+      CTC: '0x0000000000000000000000000000000000000000',
+    },
+    facilitator: 'https://gateway.spacerouter.org',
+  },
+  'creditcoin-testnet': {
+    chainId: 102031,
+    caip2: 'eip155:102031',
+    name: 'Creditcoin CC3 Testnet',
+    rpcUrl: 'https://rpc.cc3-testnet.creditcoin.network',
+    protocols: ['spacerouter'],
+    tokens: {
+      // SPC = testnet equivalent of SPACE. Address overridable via SpaceRouterConfig.tokenAddress.
+      SPC: '0x0000000000000000000000000000000000000000',
+      CTC: '0x0000000000000000000000000000000000000000',
+    },
+    facilitator: 'https://gateway.spacerouter.org',
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

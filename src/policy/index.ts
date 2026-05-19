@@ -2,13 +2,13 @@ import { NPaymentError } from '../errors.js';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-export type PolicyRuleType = 'spending_limit' | 'rate_limit' | 'allowlist' | 'blocklist';
+export type PolicyRuleType = 'spending_limit' | 'rate_limit' | 'allowlist' | 'blocklist' | 'bandwidth_limit' | 'region_filter';
 
 export interface PolicyRule {
   id: string;
   type: PolicyRuleType;
   scope: 'global' | 'per_tool' | 'per_session';
-  config: SpendingLimitConfig | RateLimitConfig | ListConfig;
+  config: SpendingLimitConfig | RateLimitConfig | ListConfig | BandwidthLimitConfig | RegionFilterConfig;
 }
 
 export interface SpendingLimitConfig {
@@ -26,6 +26,18 @@ export interface ListConfig {
   addresses: string[];
 }
 
+/** v0.11: bandwidth limit (bytes / hour, bytes / day). Used by SpaceRouter. */
+export interface BandwidthLimitConfig {
+  maxBytesPerHour: bigint;
+  maxBytesPerDay: bigint;
+}
+
+/** v0.11: region + ipType allowlists for proxy routing. */
+export interface RegionFilterConfig {
+  allowedRegions?: string[];
+  allowedIpTypes?: string[];
+}
+
 export type PolicyDecision =
   | { allowed: true }
   | { allowed: false; reason: string; ruleId: string };
@@ -40,12 +52,19 @@ export interface PaymentRequest {
   referenceKey?: string;
   /** Arbitrary key/value metadata persisted in audit log. */
   metadata?: Record<string, string>;
+  // ─── v0.11: bandwidth fields (used by SpaceRouter; optional otherwise) ───
+  /** Byte count for bandwidth-flavoured requests (proxy traffic). */
+  bytesServed?: bigint;
+  /** ISO 3166-1 alpha-2 region code. */
+  region?: string;
+  /** IP type — residential / mobile / business / hosting. */
+  ipType?: string;
 }
 
 export interface AuditEntry {
   id: string;
   timestamp: number;
-  type: 'payment' | 'policy_check' | 'settlement';
+  type: 'payment' | 'policy_check' | 'settlement' | 'bandwidth';
   amount?: bigint;
   chain?: string;
   tool?: string;
@@ -53,6 +72,10 @@ export interface AuditEntry {
   decision: PolicyDecision;
   referenceKey?: string;
   metadata?: Record<string, string>;
+  // ─── v0.11 ───
+  bytesServed?: bigint;
+  region?: string;
+  ipType?: string;
 }
 
 export interface PolicyConfig {
@@ -62,6 +85,11 @@ export interface PolicyConfig {
   rateLimit?: { maxRequests: number; windowMs: number };
   blocklist?: string[];
   allowlist?: string[];
+  // ─── v0.11 ───
+  bandwidthMaxPerHour?: bigint;
+  bandwidthMaxPerDay?: bigint;
+  allowedRegions?: string[];
+  allowedIpTypes?: string[];
 }
 
 // ─── Policy Engine ─────────────────────────────────────────────────────────────
@@ -73,6 +101,11 @@ export class PolicyEngine {
   private hourReset = Date.now() + 3600_000;
   private dayReset = Date.now() + 86400_000;
   private requestWindow: number[] = [];
+  // ─── v0.11: bandwidth tracking ───
+  private hourlyBytes = 0n;
+  private dailyBytes = 0n;
+  private bytesHourReset = Date.now() + 3600_000;
+  private bytesDayReset = Date.now() + 86400_000;
 
   constructor(rules: PolicyRule[] = []) {
     this.rules = rules;
@@ -106,6 +139,25 @@ export class PolicyEngine {
     if (config.allowlist?.length) {
       rules.push({ id: 'allowlist', type: 'allowlist', scope: 'global', config: { addresses: config.allowlist } });
     }
+    if (config.bandwidthMaxPerHour || config.bandwidthMaxPerDay) {
+      rules.push({
+        id: 'bandwidth',
+        type: 'bandwidth_limit',
+        scope: 'global',
+        config: {
+          maxBytesPerHour: config.bandwidthMaxPerHour ?? (1n << 62n),
+          maxBytesPerDay: config.bandwidthMaxPerDay ?? (1n << 62n),
+        },
+      });
+    }
+    if (config.allowedRegions?.length || config.allowedIpTypes?.length) {
+      rules.push({
+        id: 'region',
+        type: 'region_filter',
+        scope: 'global',
+        config: { allowedRegions: config.allowedRegions, allowedIpTypes: config.allowedIpTypes },
+      });
+    }
     return new PolicyEngine(rules);
   }
 
@@ -114,6 +166,8 @@ export class PolicyEngine {
     // Reset windows
     if (now > this.hourReset) { this.hourlySpend = 0n; this.hourReset = now + 3600_000; }
     if (now > this.dayReset) { this.dailySpend = 0n; this.dayReset = now + 86400_000; }
+    if (now > this.bytesHourReset) { this.hourlyBytes = 0n; this.bytesHourReset = now + 3600_000; }
+    if (now > this.bytesDayReset) { this.dailyBytes = 0n; this.bytesDayReset = now + 86400_000; }
 
     for (const rule of this.rules) {
       const decision = this.evaluateRule(rule, request, now);
@@ -125,6 +179,12 @@ export class PolicyEngine {
   recordSpend(amount: bigint): void {
     this.hourlySpend += amount;
     this.dailySpend += amount;
+  }
+
+  /** v0.11: record bandwidth usage so bandwidth_limit rules can roll forward. */
+  recordBandwidth(bytes: bigint): void {
+    this.hourlyBytes += bytes;
+    this.dailyBytes += bytes;
   }
 
   private evaluateRule(rule: PolicyRule, request: PaymentRequest, now: number): PolicyDecision {
@@ -157,6 +217,23 @@ export class PolicyEngine {
         const cfg = rule.config as ListConfig;
         if (request.recipient && !cfg.addresses.includes(request.recipient))
           return { allowed: false, reason: `Recipient not in allowlist`, ruleId: rule.id };
+        return { allowed: true };
+      }
+      case 'bandwidth_limit': {
+        const cfg = rule.config as BandwidthLimitConfig;
+        const bytes = request.bytesServed ?? 0n;
+        if (this.hourlyBytes + bytes > cfg.maxBytesPerHour)
+          return { allowed: false, reason: 'Hourly bandwidth limit reached', ruleId: rule.id };
+        if (this.dailyBytes + bytes > cfg.maxBytesPerDay)
+          return { allowed: false, reason: 'Daily bandwidth limit reached', ruleId: rule.id };
+        return { allowed: true };
+      }
+      case 'region_filter': {
+        const cfg = rule.config as RegionFilterConfig;
+        if (cfg.allowedRegions?.length && request.region && !cfg.allowedRegions.includes(request.region))
+          return { allowed: false, reason: `Region not allowed: ${request.region}`, ruleId: rule.id };
+        if (cfg.allowedIpTypes?.length && request.ipType && !cfg.allowedIpTypes.includes(request.ipType))
+          return { allowed: false, reason: `IP type not allowed: ${request.ipType}`, ruleId: rule.id };
         return { allowed: true };
       }
       default:
@@ -228,6 +305,38 @@ export class SpendingGuard {
       chain: request.chain,
       url: request.url,
       tool: request.tool,
+      referenceKey: request.referenceKey,
+      metadata: request.metadata,
+      decision: { allowed: true },
+    });
+  }
+
+  /** v0.11: evaluate a bandwidth-flavoured request (proxy hop). */
+  checkBandwidth(request: PaymentRequest): PolicyDecision {
+    const decision = this.policy.evaluate(request);
+    this.audit.record({
+      type: 'policy_check',
+      chain: request.chain,
+      url: request.url,
+      bytesServed: request.bytesServed,
+      region: request.region,
+      ipType: request.ipType,
+      decision,
+    });
+    return decision;
+  }
+
+  /** v0.11: record a successful bandwidth hop. */
+  recordBandwidth(request: PaymentRequest): void {
+    if (request.bytesServed) this.policy.recordBandwidth(request.bytesServed);
+    this.audit.record({
+      type: 'bandwidth',
+      amount: request.amount,
+      chain: request.chain,
+      url: request.url,
+      bytesServed: request.bytesServed,
+      region: request.region,
+      ipType: request.ipType,
       referenceKey: request.referenceKey,
       metadata: request.metadata,
       decision: { allowed: true },

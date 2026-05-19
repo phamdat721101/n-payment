@@ -41,5 +41,15 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
     );
   }
 
+  // v0.11: SpaceRouter requires a creditcoin-* chain when strict.
+  const hasSpaceRouterChain = input.chains.some((c) => CHAINS[c].protocols.includes('spacerouter'));
+  if (input.spacerouter?.strict && !hasSpaceRouterChain) {
+    throw new NPaymentError(
+      'spacerouter config requires a creditcoin-* chain',
+      'INVALID_CONFIG',
+      'Add "creditcoin-mainnet" or "creditcoin-testnet" to chains',
+    );
+  }
+
   return { protocol: 'auto', ...input };
 }

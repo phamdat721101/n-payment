@@ -1,7 +1,7 @@
 {
   "name": "n-payment",
-  "version": "0.10.0",
-  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402, Stellar (x402 + MPP Charge + Session payment channels), XRPL, Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, batch settlement, streaming payments with policy engine and OWS wallet security",
+  "version": "0.11.0",
+  "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402, Stellar (x402 + MPP Charge + Session payment channels), XRPL, Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, SpaceRouter residential-proxy bandwidth on Creditcoin (v0.11), batch settlement, streaming payments with policy engine and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./spacerouter": {
+      "types": "./dist/spacerouter/index.d.ts",
+      "import": "./dist/spacerouter/index.mjs",
+      "require": "./dist/spacerouter/index.js"
     }
   },
   "files": [
@@ -46,7 +51,12 @@
     "soroban",
     "payment-channels",
     "freighter",
-    "ows"
+    "ows",
+    "spacerouter",
+    "spacecoin",
+    "creditcoin",
+    "residential-proxy",
+    "agentic-bandwidth"
   ],
   "license": "MIT",
   "publishConfig": {
@@ -77,6 +87,7 @@
     "@open-wallet-standard/core": ">=0.1.0",
     "@solana/spl-token": ">=0.4.0",
     "@solana/web3.js": ">=1.90.0",
+    "@spacenetwork/spacerouter": ">=1.5.0",
     "@stellar/freighter-api": ">=4.0.0",
     "@stellar/mpp": ">=0.1.0",
     "@stellar/stellar-sdk": ">=12.0.0",
@@ -89,6 +100,9 @@
   },
   "peerDependenciesMeta": {
     "@open-wallet-standard/core": {
+      "optional": true
+    },
+    "@spacenetwork/spacerouter": {
       "optional": true
     },
     "@stellar/freighter-api": {

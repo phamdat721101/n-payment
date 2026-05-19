@@ -81,6 +81,8 @@ const data = await response.json();
 | Solana Devnet | `solana-devnet` | x402 | Testing |
 | **Morph** | `morph-mainnet` | Morph x402 | **Agentic payments, Reference Key** |
 | **Morph Hoodi Testnet** | `morph-hoodi-testnet` | Morph x402 | **Testing** |
+| **Creditcoin** | `creditcoin-mainnet` | SpaceRouter | **Agentic bandwidth, residential proxy ($SPACE)** |
+| **Creditcoin CC3 Testnet** | `creditcoin-testnet` | SpaceRouter | **Testing** |
 
 ---
 
@@ -304,6 +306,53 @@ pnpm tsx examples/morph-demo.ts client   # buyer agent with referenceKey
 pnpm tsx examples/morph-demo.ts bridge   # same code, Morph + Base
 ```
 
+## Quick Start — SpaceRouter / SpaceCoin (v0.11)
+
+Buy **residential bandwidth** for your agent on Creditcoin. Pay $SPACE on-chain, route HTTP/SOCKS5 through real residential IPs, and combine with any 402 paywall in a single call.
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['creditcoin-mainnet', 'morph-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.SR_PRIVATE_KEY },
+  spacerouter: {
+    region: 'KR',
+    ipType: 'residential',
+    autoEscrow: { minBalance: 1n * 10n ** 18n, topUpAmount: 5n * 10n ** 18n, claimThreshold: 10 },
+  },
+  morph: { accessKey: process.env.MORPH_ACCESS_KEY, secretKey: process.env.MORPH_SECRET_KEY },
+});
+
+// Force the residential proxy:
+const r = await client.fetchWithPayment('https://httpbin.org/ip', undefined, { proxy: 'spacerouter' });
+
+// Or smart fallback — try direct, route via SpaceRouter only if blocked, then settle 402 if encountered:
+const r2 = await client.fetchWithPayment('https://paywalled-api.example.com/data', undefined, {
+  proxy: 'auto', region: 'US',
+  referenceKey: 'ORD-2026-001',
+});
+
+await client.close(); // flushes buffered receipts
+```
+
+**What you get:** unified bandwidth + payment audit trail (`bandwidth` and `payment` audit entry kinds), policy controls (`bandwidthMaxPerHour`, `allowedRegions`, `allowedIpTypes`), 5-day-timelock-aware withdrawals, and the same `OWSWallet` identity reused across Morph, Stellar, x402, and SpaceRouter.
+
+**Tree-shakable subpath:**
+```typescript
+import { SpaceRouterClient } from 'n-payment/spacerouter';
+```
+
+**Peer dep (optional):** install `@spacenetwork/spacerouter` only if you actually use the proxy.
+
+**Try it locally:**
+```bash
+pnpm add @spacenetwork/spacerouter
+pnpm tsx examples/spacerouter-demo.ts proxy           # residential IP via region: KR
+pnpm tsx examples/spacerouter-demo.ts smart-fallback  # auto-route on CF block
+pnpm tsx examples/spacerouter-demo.ts combined        # SpaceRouter + Morph 402 in one call
+```
+
 ## Quick Start — AP2 Protocol (Verifiable Authorization)
 
 ```typescript
@@ -384,6 +433,7 @@ await escrow.approveAndRelease(job.id, 0);
 | Register on-chain identity | `GoatIdentity` → `registerAgent()` |
 | Off-ramp to fiat | `OffRampClient` |
 | BTC-backed payments | `BtcLendingVault` |
+| Residential-IP bandwidth ($SPACE) | `proxy: 'spacerouter'` or `'auto'` in `fetchWithPayment` |
 
 ---
 

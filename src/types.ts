@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -17,7 +17,9 @@ export type ChainKey =
   | 'solana-mainnet'
   | 'solana-devnet'
   | 'morph-mainnet'
-  | 'morph-hoodi-testnet';
+  | 'morph-hoodi-testnet'
+  | 'creditcoin-mainnet'
+  | 'creditcoin-testnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -93,6 +95,48 @@ export interface MorphConfig {
   altFee?: { enabled?: boolean; token?: 'USDC' | 'USDT0' | 'BGB' };
 }
 
+// ─── SpaceRouter (v0.11) ─────────────────────────────────────────────────────
+
+export type SpaceRouterRegion = string;            // ISO 3166-1 alpha-2 (e.g. 'US', 'KR', 'JP')
+export type SpaceRouterIpType = 'residential' | 'mobile' | 'business' | 'hosting';
+
+/**
+ * SpaceRouter (SpaceCoin) configuration. v0.11 ships an agentic-bandwidth layer:
+ * residential proxy routing on Creditcoin paid in $SPACE, with on-chain escrow
+ * and EIP-712 receipts. See docs.spacecoin.org/spacerouter-proxy.
+ */
+export interface SpaceRouterConfig {
+  /** Proxy gateway URL (CONNECT, port 443/8080). Default: https://gateway.spacerouter.org */
+  gatewayUrl?: string;
+  /** Management API URL (port 8081, /auth/challenge + /leg1/*). Default: gatewayUrl + ':8081'. */
+  gatewayMgmtUrl?: string;
+  /** API key (sr_live_... or sr_test_...). Optional — gateway may also accept wallet-signed challenges. */
+  apiKey?: string;
+  /** Override TokenPaymentEscrow address (defaults to canonical mainnet/testnet address). */
+  escrowContract?: string;
+  /** Override SPACE/SPC token address (defaults to canonical chain token). */
+  tokenAddress?: string;
+  /** Default region for routing (2-letter ISO code). Per-call overridable via PaymentContext.region. */
+  region?: SpaceRouterRegion;
+  /** Default IP type. Per-call overridable. */
+  ipType?: SpaceRouterIpType;
+  /** Auto-managed escrow + receipt sync. Omit for fully manual. */
+  autoEscrow?: {
+    /** Auto-deposit when escrow balance drops below this (wei). */
+    minBalance?: bigint;
+    /** Amount to deposit on auto top-up (wei). */
+    topUpAmount?: bigint;
+    /** Sync receipts after this many requests (or on close()). */
+    claimThreshold?: number;
+    /** Sync receipts every N ms (or on close()). */
+    syncIntervalMs?: number;
+  };
+  /** Throw on missing credentials/peer-dep instead of warning. */
+  strict?: boolean;
+  /** TLS verify (set false only for self-signed test gateways). */
+  verify?: boolean;
+}
+
 export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
@@ -105,6 +149,7 @@ export interface NPaymentConfig {
   xrpl?: XrplConfig;
   stellar?: StellarConfig;
   morph?: MorphConfig;
+  spacerouter?: SpaceRouterConfig;
   analytics?: { plugins?: AnalyticsPlugin[] };
   // v0.8: Circle Gateway nanopayments
   circle?: { apiKey: string; environment?: 'sandbox' | 'production'; walletId?: string };
@@ -131,12 +176,35 @@ export interface PaymentContext {
   referenceKey?: string;
   /** Arbitrary key/value metadata persisted in audit log. */
   metadata?: Record<string, string>;
+  /** v0.11: route through a residential proxy network. 'auto' = direct first, fallback on 403/429/CF-block. */
+  proxy?: 'spacerouter' | 'auto' | 'none';
+  /** v0.11: ISO 3166-1 alpha-2 region code for proxy routing (e.g. 'US', 'KR'). */
+  region?: SpaceRouterRegion;
+  /** v0.11: IP-type filter for proxy routing. */
+  ipType?: SpaceRouterIpType;
 }
 
 export interface PaymentAdapter {
   readonly protocol: string;
   detect(response: Response): boolean;
   pay(url: string, init: RequestInit | undefined, response: Response, ctx?: PaymentContext): Promise<Response>;
+}
+
+/**
+ * v0.11 ProxyAdapter — a parallel-but-distinct interface to PaymentAdapter.
+ * Where PaymentAdapter responds to a 402 challenge, ProxyAdapter routes a request through
+ * a paid bandwidth network (SpaceRouter today; Tor / Mysterium tomorrow).
+ *
+ * `detect(ctx)` — returns true when the adapter wants to handle the routing for this context.
+ * `route()` — performs the proxied fetch. Caller should still feed the result through the
+ *             402 paywall pipeline if needed.
+ */
+export interface ProxyAdapter {
+  readonly protocol: string;
+  detect(ctx: PaymentContext | undefined, response?: Response): boolean;
+  route(url: string, init: RequestInit | undefined, ctx?: PaymentContext): Promise<Response>;
+  /** Optional: graceful shutdown (flush receipts, close timers). */
+  close?(): Promise<void>;
 }
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
