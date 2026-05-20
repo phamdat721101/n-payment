@@ -4,7 +4,7 @@ The payment layer for AI agents. One SDK, every protocol.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), and [AP2](https://ap2-protocol.org) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, and full audit trail.
 
-[![npm](https://img.shields.io/npm/v/n-payment)](https://www.npmjs.com/package/n-payment)
+**v0.12 highlights:** BNB Chain support (19 chains total), security-hardened PolicyEngine with real amount enforcement, `trustedFacilitators` allowlist, paywall middleware with on-chain verification.
 
 ```bash
 npm install n-payment
@@ -43,15 +43,15 @@ const data = await response.json();
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         n-payment v0.8                               │
+│                         n-payment v0.12                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  YOUR CODE: fetchWithPayment(url)                                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Policy Engine → Spending Guard → Audit Log                         │
+│  Policy Engine → Spending Guard → Audit Log → trustedFacilitators   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Batch Settlement │ Streaming Payments │ Circle Nanopayments        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  x402 │ MPP │ GOAT │ Stellar │ XRPL │ Solana │ Circle Gateway      │
+│  x402 │ MPP │ GOAT │ Stellar │ XRPL │ Solana │ BNB │ Morph │ SR   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  OWS Wallet │ Viem │ Stellar Wallet │ XRPL Wallet │ Solana Keypair │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -62,13 +62,15 @@ const data = await response.json();
 
 ---
 
-## Supported Chains (15)
+## Supported Chains (19)
 
 | Chain | Key | Protocol | Use Case |
 |-------|-----|----------|----------|
 | Base | `base-mainnet` | x402 | Production payments |
 | Base Sepolia | `base-sepolia` | x402 | Testing |
 | Arbitrum Sepolia | `arbitrum-sepolia` | x402 | Testing |
+| **BNB Chain** | `bnb-mainnet` | x402 | **High-volume payments** |
+| **BNB Testnet** | `bnb-testnet` | x402 | **Testing** |
 | GOAT Network | `goat-mainnet` | GOAT x402 | BTC-backed payments |
 | GOAT Testnet | `goat-testnet` | GOAT x402 | Testing |
 | Tempo | `tempo-mainnet` | MPP | Streaming payments |
@@ -141,6 +143,7 @@ const client = createPaymentClient({
     maxPerDay: 10000000n,        // Max $10.00 per day
     rateLimit: { maxRequests: 100, windowMs: 60_000 },
     blocklist: ['0xKnownScam...'],
+    trustedFacilitators: ['https://api.cdp.coinbase.com/platform/v2/x402'],
   },
 });
 

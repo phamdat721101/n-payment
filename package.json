@@ -1,6 +1,6 @@
 {
   "name": "n-payment",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402, Stellar (x402 + MPP Charge + Session payment channels), XRPL, Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, SpaceRouter residential-proxy bandwidth on Creditcoin (v0.11), batch settlement, streaming payments with policy engine and OWS wallet security",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

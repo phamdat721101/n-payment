@@ -20,6 +20,18 @@ export function createPaywall(config: PaywallConfig) {
 
     // ── Check x402 payment ──────────────────────────────────────────────
     if ((req.headers['payment-signature'] || req.headers['x-payment-tx']) && route.x402) {
+      // Verify payment via facilitator if configured
+      const facilitatorUrl = route.x402.facilitator ?? config.facilitator;
+      if (facilitatorUrl) {
+        verifyX402Payment(facilitatorUrl, req.headers, route).then((valid) => {
+          if (valid) return next();
+          res.status(402).json({ error: 'Payment verification failed' });
+        }).catch(() => {
+          res.status(402).json({ error: 'Payment verification unavailable' });
+        });
+        return;
+      }
+      // No facilitator configured — pass through (dev mode)
       return next();
     }
 
@@ -123,4 +135,28 @@ export function createHealthEndpoint(config: PaywallConfig) {
     }));
     res.status(200).json({ status: 'ok', routes });
   };
+}
+
+/** Verify x402 payment signature via facilitator /verify endpoint. */
+async function verifyX402Payment(
+  facilitatorUrl: string,
+  headers: Record<string, any>,
+  route: PaywallRouteConfig,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${facilitatorUrl}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentSignature: headers['payment-signature'],
+        paymentTx: headers['x-payment-tx'],
+        payTo: route.x402?.payTo,
+        maxAmountRequired: route.price,
+        network: route.x402?.network ?? 'eip155:84532',
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

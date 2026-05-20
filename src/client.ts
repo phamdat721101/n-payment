@@ -2,7 +2,7 @@ import type { NPaymentConfig, PaymentAdapter, PaymentContext, ProxyAdapter } fro
 import { CHAINS, getChainsForProtocol } from './chains.js';
 import { createConfig } from './config.js';
 import { detectProtocol } from './detect.js';
-import { AdapterNotFoundError } from './errors.js';
+import { AdapterNotFoundError, NPaymentError } from './errors.js';
 import { AnalyticsEmitter } from './analytics.js';
 import { OWSWallet } from './ows/wallet.js';
 import { X402Adapter } from './adapters/x402.js';
@@ -203,7 +203,7 @@ export class PaymentClient {
     const ctx = opts ?? {};
     const chain = this.config.chains[0];
 
-    // Up-front policy check covers both bandwidth + payment intent (region/ipType/amount).
+    // Up-front policy check (pre-payment, amount unknown yet — uses 0n for rate/region checks only)
     if (this.guard) {
       const decision = this.guard.check({
         url, amount: 0n, chain,
@@ -259,6 +259,18 @@ export class PaymentClient {
 
     // ── Step 3: 402 paywall — find payment adapter + settle ──
     const protocol = detectProtocol(response, this.config.protocol);
+
+    // Validate facilitator against trusted allowlist (if configured)
+    if (this.config.policy?.trustedFacilitators?.length) {
+      const facilitator = this.extractFacilitator(response);
+      if (facilitator && !this.config.policy.trustedFacilitators.includes(facilitator)) {
+        throw new NPaymentError(
+          `Untrusted facilitator: ${facilitator}`,
+          'UNTRUSTED_FACILITATOR',
+        );
+      }
+    }
+
     const adapter =
       this.adapters.find((a) => a.protocol === protocol) ??
       this.adapters.find((a) => a.detect(response));
@@ -272,10 +284,23 @@ export class PaymentClient {
 
     try {
       const result = await adapter.pay(url, init, response, opts);
-      if (this.guard) this.guard.recordPayment({
-        url, amount: 0n, chain,
-        referenceKey: ctx.referenceKey, metadata: ctx.metadata,
-      });
+
+      // Extract real amount from the 402 challenge for accurate policy tracking
+      const challengeAmount = this.extractChallengeAmount(response);
+      if (this.guard) {
+        // Post-payment policy check with real amount (cap enforcement)
+        const maxCap = this.config.policy?.maxPerTransaction ?? 100_000_000n; // default $100 cap
+        if (challengeAmount > maxCap) {
+          throw new NPaymentError(
+            `Challenge amount ${challengeAmount} exceeds max cap ${maxCap}`,
+            'AMOUNT_CAP_EXCEEDED',
+          );
+        }
+        this.guard.recordPayment({
+          url, amount: challengeAmount, chain,
+          referenceKey: ctx.referenceKey, metadata: ctx.metadata,
+        });
+      }
       this.analytics.emit({
         protocol: adapter.protocol, chain, url,
         success: true, durationMs: Date.now() - start, timestamp: Date.now(),
@@ -309,6 +334,31 @@ export class PaymentClient {
    */
   createStellarSession(config: StellarSessionClientConfig): StellarSessionClient {
     return new StellarSessionClient(config);
+  }
+
+  /** Extract payment amount from a 402 challenge response (best-effort). */
+  private extractChallengeAmount(response: Response): bigint {
+    try {
+      const header = response.headers.get('payment-required') ?? '';
+      if (!header) return 0n;
+      const decoded = JSON.parse(Buffer.from(header, 'base64').toString());
+      const amount = decoded.accepts?.[0]?.maxAmountRequired;
+      return amount ? BigInt(amount) : 0n;
+    } catch {
+      return 0n;
+    }
+  }
+
+  /** Extract facilitator URL from a 402 challenge (best-effort). */
+  private extractFacilitator(response: Response): string | undefined {
+    try {
+      const header = response.headers.get('payment-required') ?? '';
+      if (!header) return undefined;
+      const decoded = JSON.parse(Buffer.from(header, 'base64').toString());
+      return decoded.accepts?.[0]?.facilitator ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
 

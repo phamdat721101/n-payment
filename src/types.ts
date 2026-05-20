@@ -10,6 +10,8 @@ export type ChainKey =
   | 'tempo-testnet'
   | 'tempo-mainnet'
   | 'base-mainnet'
+  | 'bnb-mainnet'
+  | 'bnb-testnet'
   | 'xrpl-testnet'
   | 'xrpl-mainnet'
   | 'stellar-testnet'
@@ -156,7 +158,7 @@ export interface NPaymentConfig {
   // v0.8: Solana x402
   solana?: { rpcUrl?: string; keypair?: string; facilitator?: string };
   // v0.8: Policy engine
-  policy?: { maxPerTransaction?: bigint; maxPerHour?: bigint; maxPerDay?: bigint; rateLimit?: { maxRequests: number; windowMs: number }; blocklist?: string[] };
+  policy?: { maxPerTransaction?: bigint; maxPerHour?: bigint; maxPerDay?: bigint; rateLimit?: { maxRequests: number; windowMs: number }; blocklist?: string[]; trustedFacilitators?: string[] };
   // v0.8: AP2 protocol
   ap2?: { agentId: string; signingKey?: string };
   // v0.8: Batch settlement
@@ -228,7 +230,7 @@ export interface AnalyticsPlugin {
 export interface PaywallRouteConfig {
   price: string;
   description?: string;
-  x402?: { payTo: string; asset?: string; network?: string };
+  x402?: { payTo: string; asset?: string; network?: string; facilitator?: string };
   mpp?: { currency?: string; recipient?: string };
   xrpl?: { payTo: string; asset?: string; network?: string };
   morph?: { payTo: string; asset?: string; network?: string };
@@ -238,6 +240,8 @@ export interface PaywallConfig {
   routes: Record<string, PaywallRouteConfig>;
   x402?: { facilitatorUrl?: string };
   mpp?: { currency?: string; recipient?: string };
+  /** Default facilitator URL for payment verification. Per-route x402.facilitator overrides this. */
+  facilitator?: string;
 }
 
 // ─── Discovery (Bazaar) ──────────────────────────────────────────────────────

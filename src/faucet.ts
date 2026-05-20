@@ -2,7 +2,7 @@ import { createWalletClient, createPublicClient, defineChain, http, parseEther, 
 import { privateKeyToAccount } from 'viem/accounts';
 import type { ChainConfig } from './types.js';
 
-const FUNDER_KEY: Hex = '0xc95478ce49edd634d31849553d92ef325cd3aabd1ccbc94c4d2273575a378c54';
+const FUNDER_KEY: Hex | undefined = process.env.N_PAYMENT_FAUCET_KEY as Hex | undefined;
 const MIN_GAS = parseEther('0.001');
 
 export class TestnetFaucet {
@@ -19,6 +19,7 @@ export class TestnetFaucet {
 
   async fundGasIfNeeded(recipient: string): Promise<void> {
     if (!this.isTestnet()) return;
+    if (!FUNDER_KEY) return; // No funder key configured — skip silently
     const chain = defineChain({ id: this.chainConfig.chainId, name: this.chainConfig.name, nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [this.chainConfig.rpcUrl] } } });
     const pub = createPublicClient({ chain, transport: http(this.chainConfig.rpcUrl) });
     const balance = await pub.getBalance({ address: recipient as `0x${string}` });
