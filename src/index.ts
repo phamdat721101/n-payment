@@ -4,6 +4,7 @@ export type {
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
   OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig, MorphConfig, PaymentContext,
   SpaceRouterConfig, SpaceRouterRegion, SpaceRouterIpType, ProxyAdapter,
+  AaveConfig,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -168,3 +169,17 @@ export {
   EscrowEmptyError, WithdrawalLockedError, WithdrawalAlreadyPendingError,
   spaceRouterDomain, SPACEROUTER_RECEIPT_TYPES,
 } from './spacerouter/index.js';
+
+// ─── Aave Treasury (v0.13) ──────────────────────────────────────────────────
+export {
+  AaveTreasuryManager, AaveClient, YieldManager, GhoManager,
+  VaultManager, FlashMintBatcher, DelegationBridge,
+  GHO_ADDRESSES, AAVE_POOL_ADDRESSES, GHO_FLASH_MINTER,
+} from './aave/index.js';
+
+export type {
+  YieldState, VaultConfig, VaultState,
+  FlashPayment, FlashBatchResult, Delegation,
+} from './aave/index.js';
+
+export { AaveGhoAdapter } from './adapters/aave-gho.js';

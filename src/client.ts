@@ -25,6 +25,8 @@ import { PolicyEngine, AuditLog, SpendingGuard } from './policy/index.js';
 import { SpaceRouterAdapter } from './adapters/spacerouter.js';
 import { SpaceRouterClient } from './spacerouter/client.js';
 import { OWSSpaceRouterSigner, KeypairSpaceRouterSigner } from './spacerouter/signer.js';
+import { AaveTreasuryManager } from './aave/index.js';
+import { AaveGhoAdapter } from './adapters/aave-gho.js';
 import type { Hex, Address } from 'viem';
 
 const SPACE_ROUTER_DEFAULTS = {
@@ -46,6 +48,7 @@ export class PaymentClient {
   private config: NPaymentConfig;
   private guard?: SpendingGuard;
   readonly wallet: OWSWallet;
+  readonly aave?: AaveTreasuryManager;
 
   constructor(config: NPaymentConfig) {
     this.config = createConfig(config);
@@ -194,6 +197,15 @@ export class PaymentClient {
           verify: srCfg?.verify,
         });
         this.proxyAdapters.push(new SpaceRouterAdapter(srClient));
+      }
+    }
+
+    // Aave Treasury (v0.13) — yield-bearing agent wallet + GHO payments
+    if (config.aave) {
+      const aaveChain = config.chains.find(c => ['base-mainnet', 'ethereum'].includes(c)) ?? config.chains[0];
+      this.aave = new AaveTreasuryManager(config.aave, aaveChain);
+      if (config.aave.preferGho) {
+        this.adapters.push(new AaveGhoAdapter());
       }
     }
   }

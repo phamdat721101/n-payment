@@ -51,5 +51,15 @@ export function createConfig(input: NPaymentConfig): NPaymentConfig {
     );
   }
 
+  // v0.13: Aave config validation
+  if (input.aave) {
+    if (input.aave.maxLTV !== undefined && (input.aave.maxLTV < 1 || input.aave.maxLTV > 90)) {
+      throw new NPaymentError('aave.maxLTV must be between 1 and 90', 'INVALID_CONFIG');
+    }
+    if (input.aave.vault?.feePercent !== undefined && input.aave.vault.feePercent < 10) {
+      throw new NPaymentError('aave.vault.feePercent must be >= 10 (Aave requirement)', 'INVALID_CONFIG');
+    }
+  }
+
   return { protocol: 'auto', ...input };
 }

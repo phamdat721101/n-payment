@@ -139,6 +139,25 @@ export interface SpaceRouterConfig {
   verify?: boolean;
 }
 
+// ─── Aave (v0.13) ────────────────────────────────────────────────────────────
+
+export interface AaveConfig {
+  /** Auto-supply idle funds to Aave for yield. */
+  autoYield?: boolean;
+  /** Minimum balance to keep liquid (wei). Rest goes to Aave. Default: 10 USDC. */
+  minIdleBalance?: bigint;
+  /** Allow borrowing GHO against collateral for payments. */
+  borrowEnabled?: boolean;
+  /** Max loan-to-value ratio (1-90). Default: 70. */
+  maxLTV?: number;
+  /** Prefer GHO for payments when the server accepts it. */
+  preferGho?: boolean;
+  /** ERC-4626 vault config for agent treasury. */
+  vault?: { enabled?: boolean; feePercent?: number };
+  /** Credit delegation for multi-agent spending. */
+  delegation?: { enabled?: boolean; delegates?: string[]; maxPerDelegate?: bigint };
+}
+
 export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
@@ -165,6 +184,8 @@ export interface NPaymentConfig {
   batchSettlement?: { enabled?: boolean; escrowContract?: string; autoSettleThreshold?: number };
   // v0.8: Streaming payments
   streaming?: { defaultInterval?: number; autoRenew?: boolean };
+  // v0.13: Aave yield-bearing treasury
+  aave?: AaveConfig;
 }
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────

@@ -2,9 +2,9 @@
 
 The payment layer for AI agents. One SDK, every protocol.
 
-Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), and [AP2](https://ap2-protocol.org) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, and full audit trail.
+Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
-**v0.12 highlights:** BNB Chain support (19 chains total), security-hardened PolicyEngine with real amount enforcement, `trustedFacilitators` allowlist, paywall middleware with on-chain verification.
+**v0.13 highlights:** Aave yield-bearing treasury (earn 2-6.5% APY on idle funds), GHO stablecoin payments with EIP-2612 gasless permits, Flash Mint batch settlement, credit delegation for multi-agent teams, ERC-4626 vault management.
 
 ```bash
 npm install n-payment
@@ -43,11 +43,13 @@ const data = await response.json();
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         n-payment v0.12                              │
+│                         n-payment v0.13                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  YOUR CODE: fetchWithPayment(url)                                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Policy Engine → Spending Guard → Audit Log → trustedFacilitators   │
+├─────────────────────────────────────────────────────────────────────┤
+│  Aave Treasury: Auto-Yield │ GHO Payments │ Flash Mint │ Vaults    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Batch Settlement │ Streaming Payments │ Circle Nanopayments        │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -356,6 +358,106 @@ pnpm tsx examples/spacerouter-demo.ts smart-fallback  # auto-route on CF block
 pnpm tsx examples/spacerouter-demo.ts combined        # SpaceRouter + Morph 402 in one call
 ```
 
+## Quick Start — Aave Yield-Bearing Treasury (v0.13)
+
+The only payment SDK that **pays you back**. Idle agent funds auto-supply to Aave (2-6.5% APY). When you need to pay, the SDK auto-withdraws. Your agent earns yield while sleeping.
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['base-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.PRIVATE_KEY },
+  aave: {
+    autoYield: true,              // Auto-supply idle USDC to Aave
+    minIdleBalance: 10_000000n,   // Keep $10 liquid, rest earns yield
+    borrowEnabled: true,          // Borrow GHO against collateral instead of selling
+    maxLTV: 70,                   // Max 70% loan-to-value
+    preferGho: true,              // Pay with GHO when accepted (gasless via EIP-2612)
+  },
+});
+
+// Agent pays for API — SDK auto-withdraws from Aave if needed
+const res = await client.fetchWithPayment('https://paid-api.com/data');
+
+// Check treasury state
+const state = client.aave?.yield.getState();
+console.log('Supplied to Aave:', state?.supplied);  // earning yield
+console.log('Yield earned:', state?.yieldEarned);
+```
+
+**What happens under the hood:**
+1. Agent deposits 100 USDC → SDK keeps $10 liquid, supplies $90 to Aave
+2. Agent calls `fetchWithPayment($5)` → SDK checks liquid balance ($10 ≥ $5) → pays directly
+3. Agent calls `fetchWithPayment($15)` → liquid ($5) < needed ($15) → SDK auto-withdraws $10 from Aave → pays
+4. After payment → SDK sweeps excess back to Aave → continues earning
+
+**GHO Stablecoin Payments (gasless):**
+
+```typescript
+// When a server accepts GHO, the SDK mints GHO from your collateral
+// and pays with EIP-2612 permit (zero gas for the approval)
+const client = createPaymentClient({
+  chains: ['base-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.PRIVATE_KEY },
+  aave: { autoYield: true, borrowEnabled: true, preferGho: true },
+});
+
+// If server accepts GHO (0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee on Base):
+// SDK mints GHO against your ETH/USDC collateral, signs gasless permit, pays
+const res = await client.fetchWithPayment('https://gho-accepting-api.com/data');
+```
+
+**Flash Mint Batch Settlement (zero capital):**
+
+```typescript
+import { FlashMintBatcher, GhoManager } from 'n-payment';
+
+const gho = new GhoManager({ preferGho: true }, 'ethereum');
+const batcher = new FlashMintBatcher(gho);
+
+// Accumulate many small payments
+batcher.addPayment('0xSeller1', 10000n);  // $0.01
+batcher.addPayment('0xSeller2', 50000n);  // $0.05
+batcher.addPayment('0xSeller3', 5000n);   // $0.005
+
+// Settle ALL in one atomic tx via GHO Flash Mint (zero capital needed)
+const batch = batcher.buildBatchTx('0xYourBatchReceiver');
+console.log(`Settling ${batch.paymentCount} payments, total: ${batch.totalAmount}`);
+// One on-chain tx instead of 100 → 100x gas savings
+```
+
+**Credit Delegation (multi-agent teams):**
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+// Parent agent: supplies collateral, delegates borrowing power to sub-agents
+const parent = createPaymentClient({
+  chains: ['base-mainnet'],
+  ows: { wallet: 'parent-agent', privateKey: process.env.PARENT_KEY },
+  aave: {
+    autoYield: true,
+    borrowEnabled: true,
+    delegation: {
+      enabled: true,
+      delegates: ['0xSubAgent1', '0xSubAgent2'],
+      maxPerDelegate: 100_000000n,  // Each sub-agent can borrow up to $100
+    },
+  },
+});
+// Sub-agents borrow against parent's collateral — no fund transfers needed
+```
+
+**GHO Token Addresses:**
+
+| Chain | GHO Address |
+|-------|-------------|
+| Ethereum | `0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f` |
+| Base | `0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee` |
+| Arbitrum | `0x7dfF72693f6A4149b17e7C6314655f6A9F7c8B33` |
+| Avalanche | `0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73` |
+
 ## Quick Start — AP2 Protocol (Verifiable Authorization)
 
 ```typescript
@@ -437,6 +539,11 @@ await escrow.approveAndRelease(job.id, 0);
 | Off-ramp to fiat | `OffRampClient` |
 | BTC-backed payments | `BtcLendingVault` |
 | Residential-IP bandwidth ($SPACE) | `proxy: 'spacerouter'` or `'auto'` in `fetchWithPayment` |
+| **Earn yield on idle funds** | **`aave: { autoYield: true }`** |
+| **Pay with GHO (gasless)** | **`aave: { preferGho: true, borrowEnabled: true }`** |
+| **Batch 100+ payments in 1 tx** | **`FlashMintBatcher` → `buildBatchTx()`** |
+| **Multi-agent shared treasury** | **`aave: { delegation: { delegates: [...] } }`** |
+| **Manage yield vault (earn fees)** | **`VaultManager` → `buildDepositTx()`** |
 
 ---
 
