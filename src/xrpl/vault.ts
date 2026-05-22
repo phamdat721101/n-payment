@@ -1,8 +1,6 @@
 import type { XrplWallet } from './wallet.js';
 import type { XrplConnection } from './connection.js';
-
-const RLUSD_CURRENCY = 'RLUSD';
-const RLUSD_ISSUER = 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De';
+import { RLUSD_CURRENCY } from './utils.js';
 
 export interface VaultCreateOptions {
   asset?: { currency: string; issuer: string };
@@ -22,25 +20,33 @@ export interface VaultInfo {
   sharesMPTId: string;
 }
 
+/**
+ * XLS-65 single-asset vault client.
+ *
+ * v0.14: issuer is injected per-network (no hardcoded mainnet issuer).
+ */
 export class XrplVaultClient {
-  private connection: XrplConnection;
-  private wallet: XrplWallet;
+  constructor(
+    private readonly connection: XrplConnection,
+    private readonly wallet: XrplWallet,
+    /** RLUSD issuer for the wallet's network. Use `getRlusdIssuer(network)`. */
+    private readonly issuer: string,
+  ) {}
 
-  constructor(connection: XrplConnection, wallet: XrplWallet) {
-    this.connection = connection;
-    this.wallet = wallet;
+  private defaultAsset(): { currency: string; issuer: string } {
+    return { currency: RLUSD_CURRENCY, issuer: this.issuer };
   }
 
   async createVault(options: VaultCreateOptions = {}): Promise<{ hash: string; vaultId: string }> {
     const client = await this.connection.getClient();
     const address = await this.wallet.getAddress();
-    const asset = options.asset ?? { currency: RLUSD_CURRENCY, issuer: RLUSD_ISSUER };
+    const asset = options.asset ?? this.defaultAsset();
 
     let flags = 0;
     if (options.isPrivate) flags |= 0x00010000;
     if (options.nonTransferable) flags |= 0x00020000;
 
-    const tx: Record<string, any> = {
+    const tx: Record<string, unknown> = {
       TransactionType: 'VaultCreate',
       Account: address,
       Asset: asset,
@@ -53,9 +59,8 @@ export class XrplVaultClient {
     const signed = await this.wallet.sign(prepared);
     const result = await client.submitAndWait(signed.tx_blob);
 
-    // Extract vault ID from metadata
     const created = result.result.meta?.AffectedNodes?.find(
-      (n: any) => n.CreatedNode?.LedgerEntryType === 'Vault',
+      (n: { CreatedNode?: { LedgerEntryType?: string } }) => n.CreatedNode?.LedgerEntryType === 'Vault',
     );
     const vaultId = created?.CreatedNode?.LedgerIndex ?? result.result.hash;
     return { hash: result.result.hash, vaultId };
@@ -69,37 +74,34 @@ export class XrplVaultClient {
       TransactionType: 'VaultDeposit',
       Account: address,
       VaultID: vaultId,
-      Amount: { currency: RLUSD_CURRENCY, issuer: RLUSD_ISSUER, value: amount },
+      Amount: { ...this.defaultAsset(), value: amount },
     });
     const signed = await this.wallet.sign(tx);
     const result = await client.submitAndWait(signed.tx_blob);
 
-    // Parse shares from metadata
     const sharesReceived = this.extractSharesFromMeta(result.result.meta, address) ?? '0';
     return { hash: result.result.hash, sharesReceived };
   }
 
-  async withdraw(vaultId: string, opts: { amount?: string; shares?: string }): Promise<{ hash: string; assetsReceived: string }> {
+  async withdraw(
+    vaultId: string,
+    opts: { amount?: string; shares?: string },
+  ): Promise<{ hash: string; assetsReceived: string }> {
     const client = await this.connection.getClient();
     const address = await this.wallet.getAddress();
 
-    const tx: Record<string, any> = {
+    const tx: Record<string, unknown> = {
       TransactionType: 'VaultWithdraw',
       Account: address,
       VaultID: vaultId,
     };
-    if (opts.amount) {
-      tx.Amount = { currency: RLUSD_CURRENCY, issuer: RLUSD_ISSUER, value: opts.amount };
-    } else if (opts.shares) {
-      tx.Shares = opts.shares;
-    }
+    if (opts.amount) tx.Amount = { ...this.defaultAsset(), value: opts.amount };
+    else if (opts.shares) tx.Shares = opts.shares;
 
     const prepared = await client.autofill(tx);
     const signed = await this.wallet.sign(prepared);
     const result = await client.submitAndWait(signed.tx_blob);
-
-    const assetsReceived = opts.amount ?? '0';
-    return { hash: result.result.hash, assetsReceived };
+    return { hash: result.result.hash, assetsReceived: opts.amount ?? '0' };
   }
 
   async getVaultInfo(vaultId: string): Promise<VaultInfo> {
@@ -109,7 +111,7 @@ export class XrplVaultClient {
     return {
       vaultId,
       owner: v.Owner ?? v.Account ?? '',
-      asset: v.Asset ?? { currency: RLUSD_CURRENCY, issuer: RLUSD_ISSUER },
+      asset: v.Asset ?? this.defaultAsset(),
       totalAssets: v.AssetsTotal ?? '0',
       totalShares: v.SharesTotal ?? '0',
       lossUnrealized: v.LossUnrealized ?? '0',
@@ -123,19 +125,18 @@ export class XrplVaultClient {
     const shares = parseFloat(info.totalShares);
     const loss = parseFloat(info.lossUnrealized);
     if (shares === 0) return { deposit: 1, withdrawal: 1 };
-    return {
-      deposit: assets / shares,
-      withdrawal: (assets - loss) / shares,
-    };
+    return { deposit: assets / shares, withdrawal: (assets - loss) / shares };
   }
 
-  private extractSharesFromMeta(meta: any, address: string): string | null {
-    if (!meta?.AffectedNodes) return null;
-    for (const node of meta.AffectedNodes) {
-      const fields = node.ModifiedNode?.FinalFields ?? node.CreatedNode?.NewFields;
-      if (fields?.MPTokenHolder === address && fields?.MPTAmount) {
-        return fields.MPTAmount;
-      }
+  private extractSharesFromMeta(meta: unknown, address: string): string | null {
+    const affected = (meta as { AffectedNodes?: unknown[] } | undefined)?.AffectedNodes;
+    if (!Array.isArray(affected)) return null;
+    for (const node of affected) {
+      const fields =
+        (node as { ModifiedNode?: { FinalFields?: Record<string, unknown> }; CreatedNode?: { NewFields?: Record<string, unknown> } })
+          .ModifiedNode?.FinalFields ??
+        (node as { CreatedNode?: { NewFields?: Record<string, unknown> } }).CreatedNode?.NewFields;
+      if (fields?.MPTokenHolder === address && fields?.MPTAmount) return String(fields.MPTAmount);
     }
     return null;
   }

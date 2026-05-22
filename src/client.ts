@@ -9,7 +9,12 @@ import { X402Adapter } from './adapters/x402.js';
 import { MppAdapter } from './adapters/mpp.js';
 import { GoatAdapter } from './adapters/goat.js';
 import { XrplAdapter } from './adapters/xrpl.js';
+import { XrplConnection } from './xrpl/connection.js';
 import { XrplWallet } from './xrpl/wallet.js';
+import { XrplVaultClient } from './xrpl/vault.js';
+import { XrplSwapClient } from './xrpl/swap.js';
+import { XrplTreasuryManager } from './xrpl/treasury.js';
+import { getRlusdIssuer, networkFromChainKey } from './xrpl/utils.js';
 import { StellarX402Adapter } from './adapters/stellar-x402.js';
 import { StellarMppAdapter } from './adapters/stellar-mpp.js';
 import { StellarWallet } from './stellar/wallet.js';
@@ -49,6 +54,8 @@ export class PaymentClient {
   private guard?: SpendingGuard;
   readonly wallet: OWSWallet;
   readonly aave?: AaveTreasuryManager;
+  /** v0.14: XRPL XLS-65 vault treasury (yield-parity). Constructed when xrpl.treasury.autoYield is set. */
+  readonly xrplTreasury?: XrplTreasuryManager;
 
   constructor(config: NPaymentConfig) {
     this.config = createConfig(config);
@@ -81,10 +88,45 @@ export class PaymentClient {
     }
 
     const hasXrpl = getChainsForProtocol(config.chains, 'xrpl').length > 0;
-    if (hasXrpl && config.xrpl?.seed) {
+    if (hasXrpl) {
       const xrplChain = getChainsForProtocol(config.chains, 'xrpl')[0];
-      const xrplWallet = new XrplWallet({ seed: config.xrpl.seed, owsWallet: config.ows.wallet });
-      this.adapters.push(new XrplAdapter(xrplWallet, xrplChain));
+      const xrplCfg = config.xrpl;
+      const hasCreds = !!(xrplCfg?.seed || config.ows.wallet);
+      if (hasCreds) {
+        const network = networkFromChainKey(xrplChain);
+        const issuer = getRlusdIssuer(network);
+        const xrplWallet = new XrplWallet({ seed: xrplCfg?.seed, owsWallet: config.ows.wallet });
+        const xrplConn = new XrplConnection(xrplCfg?.server ?? xrplChain);
+        const xrplVault = new XrplVaultClient(xrplConn, xrplWallet, issuer);
+        const xrplSwap = new XrplSwapClient(xrplConn, xrplWallet, network, issuer);
+
+        let treasury: XrplTreasuryManager | undefined;
+        if (xrplCfg?.treasury?.autoYield) {
+          treasury = new XrplTreasuryManager(
+            { ...xrplCfg.treasury, minXrpReserve: xrplCfg.minXrpReserve },
+            { connection: xrplConn, wallet: xrplWallet, vault: xrplVault, network },
+          );
+          this.xrplTreasury = treasury;
+        }
+
+        this.adapters.push(
+          new XrplAdapter(xrplWallet, xrplConn, network, xrplSwap, treasury, {
+            autoSwap: xrplCfg?.autoSwap,
+            maxSlippageBps: xrplCfg?.maxSlippageBps,
+          }),
+        );
+      } else if (xrplCfg?.strict) {
+        throw new AdapterNotFoundError(
+          'XRPL chain configured with strict mode but xrpl.seed / ows.wallet missing',
+          'XRPL_NO_CREDENTIALS',
+          'Provide xrpl: { seed: "sEd..." } or use OWS wallet identity, or set strict: false for credential-less dev.',
+        );
+      } else {
+        console.warn(
+          '[n-payment] XRPL chain configured without xrpl.seed / ows.wallet — XRPL adapter disabled. ' +
+          'Provide xrpl.seed or use OWS to enable, or pass xrpl.strict: true to fail fast.',
+        );
+      }
     }
 
     // Stellar v0.10 — soft credential-less mode (mirrors Morph pattern)

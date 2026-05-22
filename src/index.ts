@@ -74,15 +74,36 @@ export type { MppChargeMode } from './adapters/stellar-mpp.js';
 
 // ─── XRPL (Ripple) ──────────────────────────────────────────────────────────
 export { XrplClient, createXrplClient } from './xrpl/client.js';
-export type { XrplClientConfig } from './xrpl/client.js';
+export type { XrplClientConfig, XrplHealthReport } from './xrpl/client.js';
 export { XrplWallet } from './xrpl/wallet.js';
 export { XrplConnection } from './xrpl/connection.js';
 export { XrplVaultClient } from './xrpl/vault.js';
 export type { VaultCreateOptions, VaultInfo } from './xrpl/vault.js';
 export { DiaOracleClient } from './xrpl/oracle.js';
 export type { OraclePrice } from './xrpl/oracle.js';
-export { ensureTrustLine, sendRLUSD, getRLUSDBalance } from './xrpl/payments.js';
+export {
+  ensureTrustLine, sendRLUSD, getRLUSDBalance, readAccountState, clearAccountStateCache,
+} from './xrpl/payments.js';
+export type { AccountState, IssuerOpts } from './xrpl/payments.js';
 export { XrplAdapter } from './adapters/xrpl.js';
+export type { XrplAdapterOptions } from './adapters/xrpl.js';
+// ─── XRPL v0.14 ─────────────────────────────────────────────────────────────
+export {
+  RLUSD_ISSUERS, RLUSD_CURRENCY, RLUSD_DECIMALS,
+  getRlusdIssuer, networkFromChainKey,
+  parseRlusdAmount, formatRlusdAmount,
+  padSendMaxDrops, computeQuoteSlippageBps,
+} from './xrpl/utils.js';
+export type { XrplNetwork } from './xrpl/utils.js';
+export { XrplSwapClient } from './xrpl/swap.js';
+export type {
+  XrplSwapQuote, XrplSwapQuoteOptions, XrplSwapOptions, XrplSwapResult, SwapAsset,
+} from './xrpl/swap.js';
+export { XrplTreasuryManager, MemoryVaultIdStore } from './xrpl/treasury.js';
+export type {
+  VaultIdStore, XrplTreasuryConfig, XrplTreasuryDeps, XrplTreasuryState,
+} from './xrpl/treasury.js';
+export type { XrplTreasuryConfigInput } from './types.js';
 
 // ─── Transactor ──────────────────────────────────────────────────────────────
 export { ViemTransactor } from './transactor.js';

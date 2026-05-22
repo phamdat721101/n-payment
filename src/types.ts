@@ -36,10 +36,57 @@ export interface ChainConfig {
 
 // ─── XRPL ────────────────────────────────────────────────────────────────────
 
+/**
+ * XRPL agent configuration.
+ *
+ * v0.14 adds RLUSD-aware auto-swap (atomic XRP→RLUSD via cross-currency Payment)
+ * and XLS-65 vault treasury yield-parity (mirroring v0.13 Aave config).
+ */
 export interface XrplConfig {
+  /** XRPL secret seed (sEd...). Optional in OWS dual-mode. */
   seed?: string;
+  /** Override rippled WS/RPC URL. Default: per-network public cluster. */
   server?: string;
+  /** XRPL network. Determines RLUSD issuer + facilitator. @default 'testnet' */
   network?: 'testnet' | 'mainnet';
+
+  // ── v0.14 auto-swap ─────────────────────────────────────────────────────
+  /**
+   * On a 402 RLUSD challenge with insufficient RLUSD balance, automatically
+   * swap from XRP via XRPL native cross-currency Payment (AMM + DEX auto-routed
+   * by rippled). @default false
+   */
+  autoSwap?: boolean;
+  /** Max acceptable slippage on auto-swap, in basis points. @default 100 (1%) */
+  maxSlippageBps?: number;
+  /** Throw on missing seed/owsWallet instead of warning + disabling. @default false */
+  strict?: boolean;
+  /**
+   * Minimum XRP drops the wallet must hold before XLS-65 VaultCreate can
+   * be auto-provisioned (covers owner reserve). @default 5_000_000 (5 XRP)
+   */
+  minXrpReserve?: bigint;
+
+  // ── v0.14 XLS-65 treasury ───────────────────────────────────────────────
+  /** XLS-65 vault treasury (yield-parity with v0.13 Aave manager). Omit to disable. */
+  treasury?: XrplTreasuryConfigInput;
+}
+
+/**
+ * Public-shape of XRPL treasury config. The runtime adds a pluggable VaultIdStore;
+ * this surface stays declarative (no class refs in user config).
+ */
+export interface XrplTreasuryConfigInput {
+  /** Auto-deposit surplus RLUSD into the vault and auto-withdraw before payments. @default false */
+  autoYield?: boolean;
+  /** Decimal RLUSD kept liquid; surplus is swept to vault. @default "10" */
+  minIdleBalance?: string;
+  /** Existing vault to use; takes precedence over autoCreate. */
+  vaultId?: string;
+  /** Auto-provision a vault on first run when vaultId missing. @default false */
+  autoCreate?: boolean;
+  /** Debounce window (ms) for post-payment sweep coalescing. @default 30_000 */
+  sweepDebounceMs?: number;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ The payment layer for AI agents. One SDK, every protocol.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
+**v0.14 highlights:** XRPL XRP→RLUSD auto-swap via native AMM (atomic cross-currency Payment, slippage-bounded), XLS-65 vault treasury yield-parity, per-wallet concurrency mutex, `XrplClient.health()` preflight, testnet RLUSD issuer fix.
+
 **v0.13 highlights:** Aave yield-bearing treasury (earn 2-6.5% APY on idle funds), GHO stablecoin payments with EIP-2612 gasless permits, Flash Mint batch settlement, credit delegation for multi-agent teams, ERC-4626 vault management.
 
 ```bash
@@ -540,6 +542,7 @@ await escrow.approveAndRelease(job.id, 0);
 | BTC-backed payments | `BtcLendingVault` |
 | Residential-IP bandwidth ($SPACE) | `proxy: 'spacerouter'` or `'auto'` in `fetchWithPayment` |
 | **Earn yield on idle funds** | **`aave: { autoYield: true }`** |
+| **Pay XRPL paywalls with only XRP** | **`xrpl: { autoSwap: true, treasury: { autoYield: true, autoCreate: true } }`** |
 | **Pay with GHO (gasless)** | **`aave: { preferGho: true, borrowEnabled: true }`** |
 | **Batch 100+ payments in 1 tx** | **`FlashMintBatcher` → `buildBatchTx()`** |
 | **Multi-agent shared treasury** | **`aave: { delegation: { delegates: [...] } }`** |

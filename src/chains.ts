@@ -93,7 +93,8 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     rpcUrl: 'https://s.altnet.rippletest.net:51234',
     wsUrl: 'wss://s.altnet.rippletest.net:51233',
     protocols: ['xrpl'],
-    tokens: { RLUSD: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', XRP: 'native' },
+    // Per Ripple docs the testnet RLUSD issuer differs from mainnet — see src/xrpl/utils.ts RLUSD_ISSUERS.
+    tokens: { RLUSD: 'rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV', XRP: 'native' },
   },
   'xrpl-mainnet': {
     chainId: 0,
