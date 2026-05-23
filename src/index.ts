@@ -4,7 +4,7 @@ export type {
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
   OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig, MorphConfig, PaymentContext,
   SpaceRouterConfig, SpaceRouterRegion, SpaceRouterIpType, ProxyAdapter,
-  AaveConfig,
+  AaveConfig, FlareConfig, FlareNetwork,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -204,3 +204,21 @@ export type {
 } from './aave/index.js';
 
 export { AaveGhoAdapter } from './adapters/aave-gho.js';
+
+// ─── Flare FXRP Bridge (v0.15) ──────────────────────────────────────────────
+export {
+  FlareClient, FlareContractsRegistry, createFlareClient, FLARE_CONTRACT_REGISTRY_ADDRESS,
+  getPersonalAccountAddress, isSmartAccount, getOperatorXrplAddresses,
+  getFxrpAddress, getFxrpBalance, getFxrpDecimals, getVaults, getAgentVaults,
+  parseXrpDropsAmount, formatXrpDropsAmount, computeDirectMintingQuote,
+  encodeDirectMintingMemo32, toXrplMemoHex,
+  getDirectMintingFees, getDirectMintingPaymentAddress, preflightDirectMintingLimits,
+  XRP_SCALE, DIRECT_MINTING_MEMO_PREFIX,
+  FlareBridgeClient, createFlareBridgeClient,
+} from './flare/index.js';
+export type {
+  FlareClientConfig, FlareContractName,
+  FlareVault, FlareAgentVault,
+  DirectMintingFees, DirectMintingQuote, DirectMintingPreflight,
+  FlareBridgeConfig, FlareMintParams, FlareMintReceipt,
+} from './flare/index.js';

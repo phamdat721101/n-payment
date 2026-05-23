@@ -4,6 +4,8 @@ The payment layer for AI agents. One SDK, every protocol.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
+**v0.15 highlights:** Flare FXRP direct-minting bridge on Coston2 testnet — one XRPL `Payment` to the FAssets Core Vault with a 32-byte memo and the caller's auto-resolved Flare PersonalAccount receives FXRP. Fire-and-forget, viem-based, no operator self-host required.
+
 **v0.14 highlights:** XRPL XRP→RLUSD auto-swap via native AMM (atomic cross-currency Payment, slippage-bounded), XLS-65 vault treasury yield-parity, per-wallet concurrency mutex, `XrplClient.health()` preflight, testnet RLUSD issuer fix.
 
 **v0.13 highlights:** Aave yield-bearing treasury (earn 2-6.5% APY on idle funds), GHO stablecoin payments with EIP-2612 gasless permits, Flash Mint batch settlement, credit delegation for multi-agent teams, ERC-4626 vault management.
@@ -89,6 +91,7 @@ const data = await response.json();
 | **Morph Hoodi Testnet** | `morph-hoodi-testnet` | Morph x402 | **Testing** |
 | **Creditcoin** | `creditcoin-mainnet` | SpaceRouter | **Agentic bandwidth, residential proxy ($SPACE)** |
 | **Creditcoin CC3 Testnet** | `creditcoin-testnet` | SpaceRouter | **Testing** |
+| **Flare Coston2 Testnet** | `flare-coston2-testnet` | Flare FXRP | **XRP→FXRP direct-minting bridge (v0.15)** |
 
 ---
 
@@ -459,6 +462,45 @@ const parent = createPaymentClient({
 | Base | `0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee` |
 | Arbitrum | `0x7dfF72693f6A4149b17e7C6314655f6A9F7c8B33` |
 | Avalanche | `0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73` |
+
+## Quick Start — Flare FXRP Bridge (v0.15)
+
+Bridge XRP into FXRP on Flare's Coston2 testnet with a single XRPL `Payment`. The SDK auto-resolves the caller's Flare `PersonalAccount`, encodes the 32-byte direct-minting memo, computes the protocol fees on-chain, and returns the validated XRPL tx hash. No operator/executor self-host required.
+
+```typescript
+import {
+  createFlareClient,
+  FlareBridgeClient,
+  XrplConnection,
+  XrplWallet,
+  getFxrpBalance,
+} from 'n-payment';
+
+const flare = createFlareClient(); // defaults to Coston2 testnet
+const xrplWallet = new XrplWallet({ seed: process.env.XRPL_SEED! });
+const xrplConnection = new XrplConnection('xrpl-testnet');
+
+const bridge = new FlareBridgeClient({ flare, xrplConnection, xrplWallet });
+const receipt = await bridge.mintFXRP({ amountXrp: '10' });
+
+console.log('XRPL tx:', receipt.xrplTxHash);
+console.log('PersonalAccount:', receipt.recipientPersonalAccount);
+console.log('Net FXRP credited:', receipt.netFxrp); // after fees
+
+// Poll for the executor-driven mint to land (~30–90s):
+const balance = await getFxrpBalance(flare, receipt.recipientPersonalAccount);
+```
+
+**Try it locally:**
+```bash
+export XRPL_SEED=sEd...   # https://xrpl.org/resources/dev-tools/xrp-faucets
+pnpm tsx examples/flare-bridge-demo.ts registry       # verify on-chain registry
+pnpm tsx examples/flare-bridge-demo.ts state-lookup   # PersonalAccount + balances
+pnpm tsx examples/flare-bridge-demo.ts quote 10       # fees + gross XRP
+pnpm tsx examples/flare-bridge-demo.ts mint 5         # send the XRPL Payment
+```
+
+See [`docs/guide-flare-fxrp-bridge.md`](./docs/guide-flare-fxrp-bridge.md) for the full architecture, fee maths, error codes, and what's deferred to v0.16.
 
 ## Quick Start — AP2 Protocol (Verifiable Authorization)
 

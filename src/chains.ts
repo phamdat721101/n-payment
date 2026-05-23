@@ -191,6 +191,18 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     },
     facilitator: 'https://gateway.spacerouter.org',
   },
+  // v0.15: Flare Coston2 testnet for FXRP direct-minting bridge.
+  // Faucet: https://faucet.flare.network/coston2 (C2FLR + FXRP + USDT0).
+  // FXRP token, AssetManager, MasterAccountController are resolved on-chain
+  // via FlareContractRegistry → never hardcode per-version addresses here.
+  'flare-coston2-testnet': {
+    chainId: 114,
+    caip2: 'eip155:114',
+    name: 'Flare Coston2 Testnet',
+    rpcUrl: 'https://coston2-api.flare.network/ext/C/rpc',
+    protocols: ['flare-fxrp'],
+    tokens: { FXRP: '0x0000000000000000000000000000000000000000' /* resolved on-chain */ },
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

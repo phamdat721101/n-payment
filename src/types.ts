@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -21,7 +21,8 @@ export type ChainKey =
   | 'morph-mainnet'
   | 'morph-hoodi-testnet'
   | 'creditcoin-mainnet'
-  | 'creditcoin-testnet';
+  | 'creditcoin-testnet'
+  | 'flare-coston2-testnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -87,6 +88,31 @@ export interface XrplTreasuryConfigInput {
   autoCreate?: boolean;
   /** Debounce window (ms) for post-payment sweep coalescing. @default 30_000 */
   sweepDebounceMs?: number;
+}
+
+// ─── Flare (v0.15) ───────────────────────────────────────────────────────────
+
+export type FlareNetwork = 'coston2-testnet';
+
+/**
+ * Flare FXRP bridge configuration.
+ *
+ * v0.15 ships a mint-only MVP: XRP → FXRP via FAssets direct-minting on Coston2,
+ * with the 32-byte memo format. Caller's PersonalAccount is the auto-resolved recipient.
+ * Mainnet, redemption, and the FXRP paywall adapter land in v0.16+.
+ */
+export interface FlareConfig {
+  /** Flare network. Only Coston2 testnet is supported in v0.15. @default 'coston2-testnet' */
+  network?: FlareNetwork;
+  /** Override Flare RPC URL. Default: per-network public Coston2 cluster. */
+  rpcUrl?: string;
+  /**
+   * Override the FlareContractRegistry root address.
+   * Default: 0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019 (canonical across mainnet/Coston2/Songbird).
+   */
+  contractRegistry?: `0x${string}`;
+  /** Throw on missing rpcUrl/credentials instead of warning + disabling. @default false */
+  strict?: boolean;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -233,6 +259,8 @@ export interface NPaymentConfig {
   streaming?: { defaultInterval?: number; autoRenew?: boolean };
   // v0.13: Aave yield-bearing treasury
   aave?: AaveConfig;
+  // v0.15: Flare FXRP direct-minting bridge
+  flare?: FlareConfig;
 }
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────
