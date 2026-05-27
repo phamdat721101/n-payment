@@ -136,6 +136,41 @@ app.get('/.well-known/agent.json', AgentCard.fromProvider(provider, 'https://you
 app.listen(3000);
 ```
 
+## Quick Start — Ship a Paid MCP Server (v0.16)
+
+Make any tool a paid MCP endpoint that **Base MCP**, **AWS Bedrock AgentCore**, **Claude Desktop**, **ChatGPT**, **Cursor**, **Codex**, and any MCP-spec client can discover and pay over x402-on-Base.
+
+```typescript
+import { createPaidMcpServer, paidTool } from 'n-payment/mcp';
+
+const server = createPaidMcpServer({
+  name: 'WeatherBot',
+  description: 'Weather data for AI agents',
+  payTo: '0xYourAddress',
+  chain: 'base-mainnet',
+  tools: [
+    paidTool({
+      name: 'forecast',
+      description: 'Get weather forecast',
+      price: 10000n, // $0.01 USDC
+      handler: async ({ city }: { city: string }) => ({ city, temp: 22 }),
+    }),
+  ],
+});
+
+await server.listen(3000);
+```
+
+Now wire it to any host:
+
+```bash
+claude mcp add --transport http weather http://localhost:3000
+```
+
+The agent calls `tools/list` (sees price metadata), calls `tools/call` (gets MCP error `-32402` with the x402 envelope), the host's wallet (Base Account, Coinbase Agentic Wallet, OWS, etc.) signs an EIP-3009 `transferWithAuthorization`, the call retries with the `x-payment` header, and the response streams back. **Spec-compliant. One file. No facilitator to self-host.**
+
+Also exposes `server.toExpressMiddleware()` and `server.handle(req: Request)` (Fetch-API) for Cloudflare Workers / Bun / Deno deployment.
+
 ## Quick Start — With Policy & Spending Limits
 
 ```typescript

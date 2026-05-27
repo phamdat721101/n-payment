@@ -37,3 +37,8 @@ export { AgentClient, createAgentClient } from './client.js';
 
 // ─── Agent Card ─────────────────────────────────────────────────────────────
 export { AgentCard } from './card.js';
+
+// ─── MCP Server (v0.16) ─────────────────────────────────────────────────────
+export { McpServer, createPaidMcpServer, MCP_PROTOCOL_VERSION, JSONRPC_PAYMENT_REQUIRED } from './mcp-server.js';
+export type { McpServerConfig } from './mcp-server.js';
+export type { ToolCallResult, PaymentEnvelope } from './paid-tool.js';
