@@ -125,6 +125,58 @@ export interface GoatCredentials {
   apiSecret: string;
   merchantId: string;
   apiUrl?: string;
+  /**
+   * v0.17 — opt into auto-funding USDC on a GOAT 402 challenge.
+   * The router inspects the agent's balance sheet and picks the cheapest
+   * available path: in-GOAT PegBTC→USDC swap, cross-chain LayerZero V2 OFT,
+   * or BTC L1 BitVM peg-in. Off by default (caller must explicitly enable).
+   */
+  autoFund?: GoatAcquisitionConfig;
+  /** Hosted BitVM bridge endpoint. Default: https://bridge.goat.network */
+  bridgeUrl?: string;
+  /** External BTC signer for Path 3. Required only if 'pegin' is in allowedPaths. */
+  btcSigner?: BtcSigner;
+  /** Override OKU router/quoter addresses (escape hatch). */
+  dexOverride?: { router?: `0x${string}`; quoter?: `0x${string}` };
+  /** Override resolved USDC address on GOAT (escape hatch). Emits a console warning when active. */
+  usdcOverride?: `0x${string}`;
+}
+
+/** v0.17: which acquisition rail the router may use. */
+export type AcquisitionPath = 'swap' | 'oft' | 'pegin';
+
+/**
+ * v0.17 GOAT USDC acquisition config. Fully optional; safe defaults are exposed via
+ * `GoatAcquisitionPresets.safeDefaults()` (see src/goat/acquisition.ts).
+ */
+export interface GoatAcquisitionConfig {
+  /** Master switch. When true, GoatAdapter auto-acquires USDC on 402 if short. */
+  enabled: boolean;
+  /** Subset of paths the router may choose from. Default: ['swap']. */
+  allowedPaths?: AcquisitionPath[];
+  /** Max acquisition spend per rolling hour, USDC wei (6-dec). */
+  maxPerHour?: bigint;
+  /** Max acquisition spend per rolling day, USDC wei (6-dec). */
+  maxPerDay?: bigint;
+  /** Max bridge/OFT fee tolerance in basis points. Default: 100 (1%). */
+  maxFeeBps?: number;
+  /** Max acceptable slippage on the on-GOAT swap leg, basis points. Default: 50 (0.5%). */
+  maxSlippageBps?: number;
+  /** When true, router quotes but does not execute. Useful for ops dry-runs. */
+  dryRun?: boolean;
+}
+
+/**
+ * v0.17 — caller-supplied BTC L1 signer for the BitVM peg-in path.
+ * **The SDK never holds BTC keys.** The signer is invoked only after the SDK
+ * has independently validated that the PSBT outputs match the bridge intent
+ * (see GOAT_BRIDGE_PSBT_TAMPERED safeguard).
+ */
+export interface BtcSigner {
+  /** Sign a PSBT (base64-encoded). Must return a fully signed, broadcastable transaction hex. */
+  signPsbt(psbtBase64: string): Promise<string>;
+  /** Return the BTC L1 address (P2WPKH or P2TR string) the signer controls. */
+  getAddress(): Promise<string>;
 }
 
 export interface BtcLendingConfig {

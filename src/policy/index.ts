@@ -64,7 +64,7 @@ export interface PaymentRequest {
 export interface AuditEntry {
   id: string;
   timestamp: number;
-  type: 'payment' | 'policy_check' | 'settlement' | 'bandwidth';
+  type: 'payment' | 'policy_check' | 'settlement' | 'bandwidth' | 'acquisition';
   amount?: bigint;
   chain?: string;
   tool?: string;
@@ -76,6 +76,15 @@ export interface AuditEntry {
   bytesServed?: bigint;
   region?: string;
   ipType?: string;
+  // ─── v0.17 — acquisition fields ───
+  /** 'swap' | 'oft' | 'pegin' for type='acquisition'. */
+  acquisitionPath?: string;
+  /** Fee paid for the acquisition leg in the source token's wei. */
+  acquisitionFee?: bigint;
+  /** Source chain (for cross-chain paths). */
+  acquisitionSrcChain?: string;
+  /** Tx hash on source chain (or BTC L1) for traceability. */
+  acquisitionTxHash?: string;
 }
 
 export interface PolicyConfig {
@@ -340,6 +349,53 @@ export class SpendingGuard {
       referenceKey: request.referenceKey,
       metadata: request.metadata,
       decision: { allowed: true },
+    });
+  }
+
+  /**
+   * v0.17 — independent rolling window for USDC acquisition spend.
+   * Tracked separately from `recordPayment` so an agent doesn't blow its
+   * payment cap on a self-funding swap. Returns a PolicyDecision so callers
+   * can refuse the acquisition before signing.
+   */
+  checkAcquisition(amountUsdcWei: bigint, caps: { maxPerHour?: bigint; maxPerDay?: bigint }): PolicyDecision {
+    const now = Date.now();
+    const audit = this.audit.query({ type: 'acquisition', from: now - 86400_000 });
+    const hourly = audit
+      .filter((e) => e.timestamp >= now - 3600_000 && e.decision.allowed)
+      .reduce((s, e) => s + (e.amount ?? 0n), 0n);
+    const daily = audit
+      .filter((e) => e.decision.allowed)
+      .reduce((s, e) => s + (e.amount ?? 0n), 0n);
+    if (caps.maxPerHour !== undefined && hourly + amountUsdcWei > caps.maxPerHour) {
+      return { allowed: false, reason: `Hourly acquisition limit reached (${hourly}+${amountUsdcWei} > ${caps.maxPerHour})`, ruleId: 'acquisition' };
+    }
+    if (caps.maxPerDay !== undefined && daily + amountUsdcWei > caps.maxPerDay) {
+      return { allowed: false, reason: `Daily acquisition limit reached (${daily}+${amountUsdcWei} > ${caps.maxPerDay})`, ruleId: 'acquisition' };
+    }
+    return { allowed: true };
+  }
+
+  /** v0.17 — record a successful USDC acquisition for audit + future cap checks. */
+  recordAcquisition(entry: {
+    amountUsdcWei: bigint;
+    chain: string;
+    path: 'swap' | 'oft' | 'pegin';
+    fee?: bigint;
+    srcChain?: string;
+    txHash?: string;
+    referenceKey?: string;
+  }): void {
+    this.audit.record({
+      type: 'acquisition',
+      amount: entry.amountUsdcWei,
+      chain: entry.chain,
+      decision: { allowed: true },
+      acquisitionPath: entry.path,
+      acquisitionFee: entry.fee,
+      acquisitionSrcChain: entry.srcChain,
+      acquisitionTxHash: entry.txHash,
+      referenceKey: entry.referenceKey,
     });
   }
 

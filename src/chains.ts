@@ -25,7 +25,10 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     name: 'GOAT Testnet3',
     rpcUrl: 'https://rpc.testnet3.goat.network',
     protocols: ['goat'],
-    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', WBTC: '0x0000000000000000000000000000000000000000', PegBTC: '0x0000000000000000000000000000000000000000' },
+    // v0.17: Testnet USDC is faucet-issued. Override via goat.usdcOverride if your fixture differs.
+    // Real liquidity for OKU PegBTC↔USDC pools and LayerZero OFT testnet endpoint may be partial —
+    // the acquisition router auto-falls-back to MockSwap/MockOft/MockBridge adapters in 'testnet-mock' mode.
+    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', WBTC: '0x0000000000000000000000000000000000000000', PegBTC: '0xbC10000000000000000000000000000000000000' },
     facilitator: 'https://api.x402.goat.network',
   },
   'goat-mainnet': {
@@ -34,7 +37,11 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     name: 'GOAT Network',
     rpcUrl: 'https://rpc.goat.network',
     protocols: ['goat'],
-    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000' },
+    // v0.17: USDC/USDT on GOAT mainnet arrive via LayerZero V2 OFT and cross-chain x402 settlement.
+    // Override via goat.usdcOverride if your deployment differs from the canonical OFT address.
+    // PegBTC = WGBTC (gas token wrapper) at 0xbC10…0000. GOAT Token at 0xbC10…0001. Multicall3
+    // for batch reads at 0xcA11bde05977b3631167028862bE2a173976CA11.
+    tokens: { USDC: '0x0000000000000000000000000000000000000000', USDT: '0x0000000000000000000000000000000000000000', PegBTC: '0xbC10000000000000000000000000000000000000', GOAT: '0xbC10000000000000000000000000000000000001' },
     facilitator: 'https://api.x402.goat.network',
   },
   'tempo-testnet': {

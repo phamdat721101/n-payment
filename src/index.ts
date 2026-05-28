@@ -38,6 +38,38 @@ export type { GoatOrder, GoatProof, GoatCreateOrderParams, GoatOrderStatus } fro
 // ─── BTC Lending ─────────────────────────────────────────────────────────────
 export { BtcLendingVault } from './goat/lending.js';
 
+// ─── GOAT USDC Acquisition Router (v0.17) ────────────────────────────────────
+export {
+  UsdcAcquisitionRouter,
+  BalanceSheetStrategy,
+  GoatAcquisitionPresets,
+  GoatTokens,
+  GoatBalances,
+  GoatDexSwap,
+  LayerZeroOftClient,
+  BitVMBridgeClient,
+  MockSwapAdapter,
+  MockOftAdapter,
+  MockBridgeAdapter,
+} from './goat/acquisition.js';
+export type {
+  AcquireParams,
+  AcquireResult,
+  RoutingDecision,
+  AcquisitionRoutingStrategy,
+  RouterDeps,
+  AcquisitionPathAdapter,
+  AcquisitionQuote,
+  AcquisitionReceipt,
+  BalanceSheet,
+} from './goat/acquisition.js';
+export type {
+  AcquisitionPath,
+  GoatAcquisitionConfig,
+  BtcSigner,
+} from './types.js';
+export { GOAT_ACQUISITION_HINTS, goatError } from './errors.js';
+
 // ─── Bazaar (Discovery) ──────────────────────────────────────────────────────
 export { BazaarClient, createBazaarClient, MOCK_CATALOG } from './bazaar/index.js';
 export type { BazaarClientConfig } from './bazaar/index.js';

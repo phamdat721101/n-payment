@@ -4,6 +4,8 @@ The payment layer for AI agents. One SDK, every protocol.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
+**v0.17 highlights:** GOAT USDC Acquisition Router — agents on GOAT Network self-fund USDC on a 402 challenge by picking the cheapest available rail: in-GOAT `PegBTC→USDC` swap (OKU/Uniswap V3), cross-chain `LayerZero V2 OFT` from Base/Polygon/Arbitrum/Optimism/BSC/Metis, or `BTC L1 → BitVM peg-in → PegBTC`. One-line presets (`safeDefaults`, `swapOnly`, `aggressive`, `testnet`), per-wallet mutex, idempotency cache, dry-run mode, partial-fill, PSBT-tampering guard, separate spending caps via `SpendingGuard.checkAcquisition()`, and Mock adapters that ship deterministic receipts for testnet/CI without external endpoints.
+
 **v0.15 highlights:** Flare FXRP direct-minting bridge on Coston2 testnet — one XRPL `Payment` to the FAssets Core Vault with a 32-byte memo and the caller's auto-resolved Flare PersonalAccount receives FXRP. Fire-and-forget, viem-based, no operator self-host required.
 
 **v0.14 highlights:** XRPL XRP→RLUSD auto-swap via native AMM (atomic cross-currency Payment, slippage-bounded), XLS-65 vault treasury yield-parity, per-wallet concurrency mutex, `XrplClient.health()` preflight, testnet RLUSD issuer fix.
@@ -497,6 +499,110 @@ const parent = createPaymentClient({
 | Base | `0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee` |
 | Arbitrum | `0x7dfF72693f6A4149b17e7C6314655f6A9F7c8B33` |
 | Avalanche | `0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73` |
+
+## Quick Start — Acquire USDC on GOAT (v0.17)
+
+GOAT Network has no native USDC issuer — the asset arrives via cross-chain bridges or DEX swaps. The **USDC Acquisition Router** lets your agent self-fund USDC on a 402 challenge by picking the cheapest available rail: PegBTC→USDC swap (OKU/Uniswap V3), cross-chain LayerZero V2 OFT, or BTC L1 BitVM peg-in.
+
+```typescript
+import { createPaymentClient, GoatAcquisitionPresets } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['goat-testnet'],
+  ows: { wallet: 'goat-agent', privateKey: process.env.PRIVATE_KEY },
+  goat: {
+    apiKey: process.env.GOAT_API_KEY!,
+    apiSecret: process.env.GOAT_API_SECRET!,
+    merchantId: process.env.GOAT_MERCHANT_ID!,
+    autoFund: GoatAcquisitionPresets.safeDefaults(), // swap+oft, $1/hr cap, 1% fee, 0.5% slippage
+  },
+});
+
+// Agent calls a GOAT x402-gated API — SDK auto-acquires USDC if short.
+const res = await client.fetchWithPayment('https://api.x402.goat.network/data');
+```
+
+**What happens under the hood when USDC is short:**
+1. Adapter detects insufficient USDC on the GOAT 402 challenge
+2. Router reads the agent's balance sheet via Multicall3 (1 RPC call, lazy)
+3. `BalanceSheetStrategy` picks the cheapest viable path:
+   - has PegBTC → **swap** on OKU
+   - has USDC on Base/Polygon/etc. → **oft** via LayerZero V2
+   - has BTC L1 → **pegin** via hosted BitVM bridge (PSBT validated before signing)
+4. `SpendingGuard.checkAcquisition()` enforces hourly/daily caps
+5. Acquisition emits an `audit.type='acquisition'` entry with path, fee, txhash
+6. GOAT order lifecycle continues — USDC transferred, proof retrieved, request retried
+
+**One-line presets:**
+
+| Preset | Paths | Caps | Use case |
+|---|---|---|---|
+| `safeDefaults()` | `swap`, `oft` | $1/hr, $10/day, 1% fee, 0.5% slip | Recommended default |
+| `swapOnly()` | `swap` | $5/hr, $50/day | BTC-treasury agents, no cross-chain risk |
+| `oftOnly()` | `oft` | $5/hr, $50/day | Multi-chain treasuries on Base/Polygon |
+| `peginOnly()` | `pegin` | $50/hr, $500/day | Cold-storage BTC top-ups |
+| `aggressive()` | all 3 | $100/hr, $1k/day, 3% fee | High-volume agents |
+| `testnet()` | all 3 (mock) | $1k/hr | Local dev / CI |
+
+**Custom config** (override any preset field):
+```typescript
+goat: {
+  // ...
+  autoFund: { ...GoatAcquisitionPresets.safeDefaults(), maxPerHour: 5_000_000n },
+  bridgeUrl: 'https://bridge.goat.network',         // hosted BitVM endpoint
+  btcSigner: myBtcSigner,                            // your PSBT-signing wallet (Sparrow/Xverse/HW)
+  usdcOverride: '0xYourCustomUsdcOnGoat',           // escape hatch — emits warning
+  dexOverride: { router: '0x...', quoter: '0x...' }, // OKU pool overrides
+},
+```
+
+**BtcSigner contract (you supply, SDK never holds BTC keys):**
+```typescript
+import type { BtcSigner } from 'n-payment';
+const myBtcSigner: BtcSigner = {
+  async signPsbt(psbtBase64) { /* sign with Sparrow / hw wallet / PSBT lib */ return signedHex; },
+  async getAddress() { return 'bc1q...'; },
+};
+```
+
+**Try it locally (testnet, no external endpoints needed):**
+```bash
+pnpm tsx examples/goat-testnet-quickstart.ts            # all scenarios
+pnpm tsx examples/goat-testnet-quickstart.ts --scenario swap
+pnpm tsx examples/goat-testnet-quickstart.ts --scenario oft
+pnpm tsx examples/goat-testnet-quickstart.ts --scenario pegin
+```
+
+**Manual acquire (without 402 trigger):**
+```typescript
+import { UsdcAcquisitionRouter, GoatAcquisitionPresets, SpendingGuard, PolicyEngine, AuditLog } from 'n-payment';
+
+const router = new UsdcAcquisitionRouter({
+  goatChain: 'goat-mainnet',
+  wallet: client.wallet,
+  config: GoatAcquisitionPresets.safeDefaults(),
+  guard: new SpendingGuard(new PolicyEngine([]), new AuditLog()),
+});
+
+// Probe without executing
+const decision = await router.estimate({ targetUsdcWei: 5_000_000n });
+console.log('Cheapest path:', decision?.path, 'fee:', decision?.quote.feeBps, 'bps');
+
+// Execute (idempotency-keyed; mutex-serialised)
+const result = await router.acquire({ targetUsdcWei: 5_000_000n, idempotencyKey: 'order-123' });
+```
+
+**Error codes** (every code carries an actionable `hint`):
+
+| Code | Meaning |
+|---|---|
+| `GOAT_NO_VIABLE_PATH` | No allowed path covers the target — fund the wallet or extend `allowedPaths` |
+| `GOAT_BTC_SIGNER_MISSING` | `pegin` allowed but no `btcSigner` configured |
+| `GOAT_OFT_PEER_DEP_MISSING` | `oft` allowed but `@layerzerolabs/oft-evm` not installed |
+| `GOAT_BRIDGE_PSBT_TAMPERED` | Bridge response did not match intent — aborted before signing |
+| `GOAT_AUTOFUND_LIMIT_EXCEEDED` | Hourly/daily acquisition cap hit |
+| `GOAT_SWAP_SLIPPAGE_EXCEEDED` | OKU quote breached `maxSlippageBps` |
+| `GOAT_OFT_FEE_TOO_HIGH` | LZ V2 quote breached `maxFeeBps` |
 
 ## Quick Start — Flare FXRP Bridge (v0.15)
 

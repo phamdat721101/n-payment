@@ -22,6 +22,7 @@ import { KeypairStellarSigner } from './stellar/signer.js';
 import { StellarChannelsClient } from './stellar/channels-client.js';
 import { StellarSessionClient, type StellarSessionClientConfig } from './stellar/session.js';
 import { BtcLendingVault } from './goat/lending.js';
+import { UsdcAcquisitionRouter } from './goat/acquisition.js';
 import { CircleGatewayAdapter } from './adapters/circle-gateway.js';
 import { SolanaX402Adapter } from './adapters/solana-x402.js';
 import { MorphX402Adapter } from './adapters/morph-x402.js';
@@ -84,7 +85,22 @@ export class PaymentClient {
     if (hasGoat && config.goat) {
       const goatChain = getChainsForProtocol(config.chains, 'goat')[0];
       const vault = config.btcLending ? new BtcLendingVault(this.wallet, config.btcLending) : undefined;
-      this.adapters.push(new GoatAdapter(config.goat, this.wallet, goatChain, vault));
+      let router: UsdcAcquisitionRouter | undefined;
+      if (config.goat.autoFund?.enabled) {
+        router = new UsdcAcquisitionRouter({
+          goatChain,
+          wallet: this.wallet,
+          config: config.goat.autoFund,
+          partnerChains: config.chains.filter((c) => c.endsWith('-mainnet') || c.endsWith('-sepolia')),
+          bridgeUrl: config.goat.bridgeUrl,
+          btcSigner: config.goat.btcSigner,
+          usdcOverride: config.goat.usdcOverride,
+          dexOverride: config.goat.dexOverride,
+          guard: this.guard,
+        });
+        router.validateConfig();
+      }
+      this.adapters.push(new GoatAdapter(config.goat, this.wallet, goatChain, vault, router));
     }
 
     const hasXrpl = getChainsForProtocol(config.chains, 'xrpl').length > 0;

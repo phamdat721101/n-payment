@@ -4,23 +4,41 @@ import { GoatX402Client } from '../goat/client.js';
 import { CHAINS } from '../chains.js';
 import { NPaymentError } from '../errors.js';
 import { BtcLendingVault } from '../goat/lending.js';
+import type { UsdcAcquisitionRouter } from '../goat/acquisition.js';
 
 /**
  * GOAT Network x402 adapter with full order lifecycle.
- * Flow: parse 402 → createOrder → OWS-sign ERC-20 → poll → proof → retry
+ *
+ * Flow: parse 402 → (optional) auto-acquire USDC via UsdcAcquisitionRouter →
+ * createOrder → OWS-sign ERC-20 → poll → proof → retry.
+ *
+ * v0.17 — `router` (optional 5th arg) wires the new acquisition pipeline. When
+ * insufficient USDC is detected and `goat.autoFund.enabled` is true, the router
+ * runs (swap / oft / pegin) before the GOAT order is created.
+ *
+ * @deprecated The `BtcLendingVault` constructor arg is retained for backwards
+ *             compatibility but will be removed in v0.18 in favour of the router.
  */
 export class GoatAdapter implements PaymentAdapter {
   readonly protocol = 'goat';
   private goatClient: GoatX402Client;
   private wallet: OWSWallet;
   private lendingVault?: BtcLendingVault;
+  private router?: UsdcAcquisitionRouter;
   private chainKey: ChainKey;
 
-  constructor(config: GoatCredentials, wallet: OWSWallet, chainKey?: ChainKey, lendingVault?: BtcLendingVault) {
+  constructor(
+    config: GoatCredentials,
+    wallet: OWSWallet,
+    chainKey?: ChainKey,
+    lendingVault?: BtcLendingVault,
+    router?: UsdcAcquisitionRouter,
+  ) {
     this.goatClient = new GoatX402Client(config);
     this.wallet = wallet;
     this.chainKey = chainKey ?? (process.env.GOAT_CHAIN === 'mainnet' ? 'goat-mainnet' : 'goat-testnet');
     this.lendingVault = lendingVault;
+    this.router = router;
   }
 
   detect(_response: Response): boolean {
@@ -31,13 +49,28 @@ export class GoatAdapter implements PaymentAdapter {
     const body = await response.json().catch(() => ({})) as any;
     const accepts = body.accepts?.[0] ?? {};
     const chainKey = this.chainKey;
-    const chainId = CHAINS[chainKey].chainId;
+    const chain = CHAINS[chainKey];
+    const chainId = chain.chainId;
     const amountWei = accepts.maxAmountRequired ?? '10000';
+    const targetUsdc = BigInt(amountWei);
 
-    const fromAddress = await this.wallet.getAddress(chainId);
+    const fromAddress = await this.wallet.getAddressAsync(chainId);
+    const usdcAddress = chain.tokens.USDC;
 
+    // ── v0.17: auto-fund USDC via router if configured & short ──
+    if (this.router && usdcAddress) {
+      const balance = await this.wallet.getBalance(usdcAddress, chainId);
+      if (balance < targetUsdc) {
+        await this.router.acquire({
+          targetUsdcWei: targetUsdc,
+          idempotencyKey: `${fromAddress}:${url}:${Math.floor(Date.now() / 60_000)}`,
+        });
+      }
+    }
+
+    // ── Legacy BTC-collateral lending path (will be removed in v0.18) ──
     let positionTxHash: string | undefined;
-    if (this.lendingVault) {
+    if (this.lendingVault && !this.router) {
       const collateral = this.lendingVault.estimateCollateral(amountWei);
       positionTxHash = await this.lendingVault.lockAndBorrow(collateral, amountWei, chainId);
     }
@@ -52,7 +85,7 @@ export class GoatAdapter implements PaymentAdapter {
 
     const { txHash } = await this.wallet.transferERC20(
       order.payToAddress,
-      CHAINS[chainKey].tokens.USDC ?? order.payToAddress,
+      usdcAddress ?? order.payToAddress,
       BigInt(amountWei),
       chainId,
     );
