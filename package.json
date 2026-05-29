@@ -1,6 +1,6 @@
 {
   "name": "n-payment",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Multi-protocol payment SDK for Web3 agents — x402, MPP, GOAT x402 + USDC Acquisition Router (PegBTC swap / LayerZero OFT / BitVM peg-in, v0.17), Stellar (x402 + MPP Charge + Session payment channels), XRPL (RLUSD payments + auto XRP→RLUSD swap via native AMM + XLS-65 vault treasury, v0.14), Flare FXRP direct-minting bridge on Coston2 (v0.15), Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, SpaceRouter residential-proxy bandwidth on Creditcoin (v0.11), Aave yield-bearing treasury with GHO payments + Flash Mint + Credit Delegation (v0.13), batch settlement, streaming payments with policy engine and OWS wallet security",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

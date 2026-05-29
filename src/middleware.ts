@@ -67,9 +67,10 @@ export function createPaywall(config: PaywallConfig) {
     if (route.morph) {
       const network = route.morph.network ?? 'eip155:2818';
       const asset = route.morph.asset ?? CHAINS['morph-mainnet'].tokens.USDC;
+      const scheme = route.morph.scheme ?? 'exact';
       const challenge = Buffer.from(JSON.stringify({
         x402Version: 2,
-        accepts: [{ scheme: 'exact', network, maxAmountRequired: route.price, asset, payTo: route.morph.payTo }],
+        accepts: [{ scheme, network, maxAmountRequired: route.price, asset, payTo: route.morph.payTo }],
       })).toString('base64');
       res.setHeader('payment-required', challenge);
     }

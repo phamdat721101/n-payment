@@ -207,6 +207,22 @@ export type {
 } from './morph/client.js';
 export type { MorphSignParams } from './morph/auth.js';
 
+// ─── Morph Hoodi Facilitator (v0.18) ────────────────────────────────────────
+export { createMorphHoodiFacilitator } from './morph/facilitator.js';
+export type { MorphHoodiFacilitatorConfig } from './morph/facilitator.js';
+export {
+  buildTransferWithAuthorizationTypedData,
+  randomEip3009Nonce,
+  encodeAuthorizationPayload,
+  decodeAuthorizationPayload,
+  splitSignature,
+  TRANSFER_WITH_AUTHORIZATION_TYPES,
+  EIP3009_ABI,
+} from './morph/eip3009.js';
+export type {
+  TransferAuthorization, AuthorizationPayload, BuildTypedDataInput, SignableTypedData,
+} from './morph/eip3009.js';
+
 // ─── SpaceRouter / SpaceCoin (v0.11) ────────────────────────────────────────
 export type {
   SpaceRouterSigner, SpaceRouterReceipt,

@@ -1,5 +1,5 @@
 import { privateKeyToAccount } from 'viem/accounts';
-import type { Hex } from 'viem';
+import type { Hex, TypedData, TypedDataDomain } from 'viem';
 import { ViemTransactor } from '../transactor.js';
 import type { ChainConfig } from '../types.js';
 import { CHAINS } from '../chains.js';
@@ -91,6 +91,34 @@ export class OWSWallet {
     if (!this.privateKey) throw new NPaymentError('No privateKey and OWS SDK not available', 'NO_SIGNER');
     const account = privateKeyToAccount(this.privateKey);
     return account.signMessage({ message });
+  }
+
+  /**
+   * Sign EIP-712 typed data. Used for sponsored payment schemes (EIP-3009 transferWithAuthorization).
+   * Local-key path is fully supported; OWS-driver path requires native EIP-712 in the driver
+   * (tracked separately) — for now, callers using sponsored mode must supply ows.privateKey.
+   */
+  async signTypedData<T extends TypedData>(params: {
+    domain: TypedDataDomain;
+    types: T;
+    primaryType: keyof T extends string ? keyof T : never;
+    message: Record<string, unknown>;
+  }): Promise<Hex> {
+    await this.ensureReady();
+    if (!this.privateKey) {
+      throw new NPaymentError(
+        'signTypedData requires ows.privateKey (OWS driver EIP-712 path not yet wired)',
+        'NO_TYPED_DATA_SIGNER',
+        'Pass ows: { privateKey: "0x..." } when using EIP-3009 sponsored payments on Hoodi.',
+      );
+    }
+    const account = privateKeyToAccount(this.privateKey);
+    return account.signTypedData({
+      domain: params.domain,
+      types: params.types,
+      primaryType: params.primaryType as string,
+      message: params.message,
+    } as Parameters<typeof account.signTypedData>[0]);
   }
 
   async payX402(_url: string, _method?: string): Promise<string> {

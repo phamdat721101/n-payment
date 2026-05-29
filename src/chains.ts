@@ -161,16 +161,19 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     },
     facilitator: 'https://morph-rails.morph.network/x402',
   },
+  // v0.18: Morph Hoodi testnet — RPC + USDC refreshed against docs.morph.network (2026-05).
+  // USDC is the operator-supplied test token (overrides the docs' L2USDC for our e2e flow).
+  // Default facilitator is the local custom facilitator; override at runtime via morph.facilitatorUrl.
   'morph-hoodi-testnet': {
     chainId: 2910,
     caip2: 'eip155:2910',
     name: 'Morph Hoodi Testnet',
-    rpcUrl: 'https://rpc-quicknode-holesky.morphl2.io',
+    rpcUrl: 'https://rpc-hoodi.morph.network',
     protocols: ['morph-x402'],
     tokens: {
-      USDC: '0xe34c91815d7fc18A9e2148bcD4241d0a5848b693',
+      USDC: '0x7433b41C6c5e1d58D4Da99483609520255ab661B',
     },
-    facilitator: 'https://morph-rails-hoodi.morph.network/x402',
+    facilitator: 'http://localhost:4040/x402',
   },
   'creditcoin-mainnet': {
     chainId: 102030,

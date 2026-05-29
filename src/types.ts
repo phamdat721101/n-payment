@@ -381,7 +381,11 @@ export interface PaywallRouteConfig {
   x402?: { payTo: string; asset?: string; network?: string; facilitator?: string };
   mpp?: { currency?: string; recipient?: string };
   xrpl?: { payTo: string; asset?: string; network?: string };
-  morph?: { payTo: string; asset?: string; network?: string };
+  /**
+   * Morph paywall route. `scheme` defaults to 'exact' (Morph mainnet direct transfer).
+   * Set `scheme: 'eip3009'` for sponsored EIP-3009 transferWithAuthorization on Hoodi (v0.18).
+   */
+  morph?: { payTo: string; asset?: string; network?: string; scheme?: 'exact' | 'eip3009' };
 }
 
 export interface PaywallConfig {

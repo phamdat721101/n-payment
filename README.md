@@ -353,6 +353,88 @@ pnpm tsx examples/morph-demo.ts client   # buyer agent with referenceKey
 pnpm tsx examples/morph-demo.ts bridge   # same code, Morph + Base
 ```
 
+## Quick Start — Morph Hoodi Testnet (v0.18)
+
+Pay on **Morph Hoodi Testnet** (chainId 2910) using EIP-3009 sponsored payments — buyer agents transact with **zero ETH** for gas. The SDK ships a self-hostable custom facilitator (`createMorphHoodiFacilitator`) so no Morph-Rails Hoodi service is required. USDC is the operator-supplied test deploy at `0x7433b41C6c5e1d58D4Da99483609520255ab661B`.
+
+**1. Run the facilitator** (one terminal — sponsor pays gas):
+
+```bash
+export MORPH_HOODI_SPONSOR_KEY=0x...   # Hoodi-funded account
+pnpm tsx examples/morph-hoodi-facilitator.ts
+# → http://localhost:4040/x402/v2/{supported,verify,settle}
+```
+
+Or embed it in your own Express app:
+
+```typescript
+import express from 'express';
+import { createPublicClient, createWalletClient, defineChain, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { CHAINS, createMorphHoodiFacilitator } from 'n-payment';
+
+const chain = CHAINS['morph-hoodi-testnet'];
+const viemChain = defineChain({ id: chain.chainId, name: chain.name,
+  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [chain.rpcUrl] } } });
+const sponsor = privateKeyToAccount(process.env.MORPH_HOODI_SPONSOR_KEY as `0x${string}`);
+const handler = createMorphHoodiFacilitator({
+  usdcAddress: chain.tokens.USDC as `0x${string}`,
+  publicClient: createPublicClient({ chain: viemChain, transport: http(chain.rpcUrl) }) as never,
+  sponsorClient: createWalletClient({ account: sponsor, chain: viemChain, transport: http(chain.rpcUrl) }) as never,
+  sponsorAddress: sponsor.address,
+});
+
+const app = express();
+app.use(express.json());
+app.use((req, res, next) => Promise.resolve(handler(req as never, res as never)).catch(next));
+app.listen(4040);
+```
+
+**2. Run a Hoodi-paywalled merchant** (paywall middleware emits `scheme: 'eip3009'`):
+
+```typescript
+import { createPaywall } from 'n-payment';
+
+app.use(createPaywall({
+  routes: {
+    'GET /api/data': {
+      price: '10000', // 0.01 USDC (6 decimals)
+      morph: {
+        payTo: '0xYourMerchantAddress',
+        network: 'eip155:2910',
+        asset: '0x7433b41C6c5e1d58D4Da99483609520255ab661B',
+        scheme: 'eip3009',
+      },
+    },
+  },
+}));
+```
+
+**3. Pay from a buyer agent** (point `morph.facilitatorUrl` at your facilitator):
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const buyer = createPaymentClient({
+  chains: ['morph-hoodi-testnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.PRIVATE_KEY }, // buyer with Hoodi USDC
+  morph: { facilitatorUrl: 'http://localhost:4040/x402' },
+});
+
+await buyer.fetchWithPayment('https://api.example.com/data', undefined, {
+  referenceKey: 'ORD-2026-001',
+});
+```
+
+**All-in-one local e2e** (merchant + facilitator + buyer in one process):
+
+```bash
+export MORPH_HOODI_SPONSOR_KEY=0x...
+export OWS_PRIVATE_KEY=0x...
+pnpm tsx examples/morph-demo.ts hoodi
+```
+
 ## Quick Start — SpaceRouter / SpaceCoin (v0.11)
 
 Buy **residential bandwidth** for your agent on Creditcoin. Pay $SPACE on-chain, route HTTP/SOCKS5 through real residential IPs, and combine with any 402 paywall in a single call.
