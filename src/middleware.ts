@@ -1,9 +1,21 @@
 import { CHAINS } from './chains.js';
 import type { PaywallConfig, PaywallRouteConfig } from './types.js';
+import { buildFlareX402Challenge, decodeFlareX402Header, verifyAndSettleFlareX402 } from './flare/x402.js';
+import type { Address, PublicClient, WalletClient } from 'viem';
 
 type Req = { method: string; path: string; headers: Record<string, any>; hostname?: string };
 type Res = { status(code: number): Res; json(body: any): void; setHeader(name: string, value: string): void };
 type Next = () => void;
+
+/**
+ * v0.19: Optional Flare merchant settle deps. Inject via the second arg to
+ * createPaywall when any route has `flare: {…}`. Kept off the PaywallConfig
+ * surface to avoid forcing viem on consumers who do not use Flare.
+ */
+export interface FlareMerchantDeps {
+  publicClient: PublicClient;
+  walletClient: WalletClient;
+}
 
 /**
  * Express middleware that returns dual 402 challenges (x402 + MPP)
@@ -12,11 +24,70 @@ type Next = () => void;
  * When mppx is installed, uses mppx/server for proper MPP credential verification.
  * Otherwise falls back to header-presence check.
  */
-export function createPaywall(config: PaywallConfig) {
+export function createPaywall(config: PaywallConfig, flareDeps?: FlareMerchantDeps) {
   return (req: Req, res: Res, next: Next) => {
     const routeKey = `${req.method} ${req.path}`;
     const route = config.routes[routeKey];
     if (!route) return next();
+
+    // ── v0.19: Flare x402 (on-chain X402Facilitator) — handle first because the
+    //          buyer header is `x-payment`, which is *also* used by other rails. ─
+    if (route.flare) {
+      const xPayment = req.headers['x-payment'] as string | undefined;
+      if (xPayment) {
+        if (!flareDeps) {
+          res.status(500).json({ error: 'Flare merchant deps missing — pass flareDeps to createPaywall' });
+          return;
+        }
+        const payload = (() => {
+          try { return decodeFlareX402Header(xPayment); }
+          catch (err) { res.status(402).json({ error: (err as Error).message }); return null; }
+        })();
+        if (!payload) return;
+        if (BigInt(payload.value) < BigInt(route.price)) {
+          res.status(402).json({ error: 'Insufficient payment', required: route.price, received: payload.value });
+          return;
+        }
+        verifyAndSettleFlareX402({
+          publicClient: flareDeps.publicClient,
+          walletClient: flareDeps.walletClient,
+          facilitatorAddress: route.flare.facilitatorAddress as Address,
+          payload,
+        })
+          .then((settle) => {
+            res.setHeader(
+              'x-payment-response',
+              Buffer.from(
+                JSON.stringify({
+                  paymentId: settle.paymentId,
+                  transactionHash: settle.transactionHash,
+                  settled: true,
+                }),
+              ).toString('base64'),
+            );
+            next();
+          })
+          .catch((err: Error) => {
+            res.status(402).json({ error: 'Flare verification/settlement failed', message: err.message });
+          });
+        return;
+      }
+      // No payment yet — render Flare-flavoured 402 challenge.
+      const flareCfg = route.flare;
+      const challenge = buildFlareX402Challenge({
+        price: route.price,
+        payTo: flareCfg.payTo,
+        asset: flareCfg.asset,
+        facilitatorAddress: flareCfg.facilitatorAddress,
+        network: flareCfg.network,
+        chainId: flareCfg.chainId,
+        resource: req.path,
+        description: route.description,
+      });
+      res.setHeader('payment-required', challenge);
+      res.status(402).json({ error: 'Payment required', protocols: ['flare-x402'] });
+      return;
+    }
 
     // ── Check x402 payment ──────────────────────────────────────────────
     if ((req.headers['payment-signature'] || req.headers['x-payment-tx']) && route.x402) {

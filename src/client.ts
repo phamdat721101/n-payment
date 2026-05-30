@@ -27,6 +27,7 @@ import { CircleGatewayAdapter } from './adapters/circle-gateway.js';
 import { SolanaX402Adapter } from './adapters/solana-x402.js';
 import { MorphX402Adapter } from './adapters/morph-x402.js';
 import { MorphX402Client } from './morph/client.js';
+import { FlareX402Adapter } from './flare/x402.js';
 import { PolicyEngine, AuditLog, SpendingGuard } from './policy/index.js';
 import { SpaceRouterAdapter } from './adapters/spacerouter.js';
 import { SpaceRouterClient } from './spacerouter/client.js';
@@ -264,6 +265,37 @@ export class PaymentClient {
       this.aave = new AaveTreasuryManager(config.aave, aaveChain);
       if (config.aave.preferGho) {
         this.adapters.push(new AaveGhoAdapter());
+      }
+    }
+
+    // Flare x402 (v0.19) — soft credential-less mode (mirrors Morph pattern).
+    // Requires both a flare-* chain in `chains` and the x402 sub-config; if either is
+    // missing we warn-and-skip so credential-less dev (e.g. just FXRP minting) still works.
+    const hasFlareX402 = getChainsForProtocol(config.chains, 'flare-x402').length > 0;
+    if (hasFlareX402) {
+      const flareChain = getChainsForProtocol(config.chains, 'flare-x402')[0];
+      const flareCfg = config.flare;
+      const hasX402Cfg = !!flareCfg?.x402?.tokenAddress && !!flareCfg.x402.facilitatorAddress;
+      const hasSigner = !!config.ows?.privateKey;
+      if (hasX402Cfg && hasSigner) {
+        this.adapters.push(
+          new FlareX402Adapter(this.wallet, flareChain, {
+            tokenName: flareCfg!.x402!.tokenName,
+            tokenVersion: flareCfg!.x402!.tokenVersion,
+            validityWindowSeconds: flareCfg!.x402!.validityWindowSeconds,
+          }),
+        );
+      } else if (flareCfg?.strict) {
+        throw new AdapterNotFoundError(
+          'Flare x402 chain configured with strict mode but flare.x402.{tokenAddress,facilitatorAddress} or ows.privateKey missing',
+          'FLARE_X402_NO_CONFIG',
+          'Pass flare: { x402: { tokenAddress, facilitatorAddress } } and ows: { privateKey } — see examples/flare-payments-demo.ts.',
+        );
+      } else {
+        console.warn(
+          '[n-payment] Flare x402 chain configured without flare.x402.{tokenAddress,facilitatorAddress} or ows.privateKey — Flare x402 adapter disabled. ' +
+          'Run examples/flare-payments-demo.ts deploy mode to provision the contracts.',
+        );
       }
     }
   }

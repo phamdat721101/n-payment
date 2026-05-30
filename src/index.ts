@@ -4,7 +4,7 @@ export type {
   PaymentAdapter, PaymentEvent, AnalyticsPlugin, PaywallRouteConfig, PaywallConfig,
   OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig, MorphConfig, PaymentContext,
   SpaceRouterConfig, SpaceRouterRegion, SpaceRouterIpType, ProxyAdapter,
-  AaveConfig, FlareConfig, FlareNetwork,
+  AaveConfig, FlareConfig, FlareNetwork, FlareX402Config, FlareGaslessConfig,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -253,7 +253,7 @@ export type {
 
 export { AaveGhoAdapter } from './adapters/aave-gho.js';
 
-// ─── Flare FXRP Bridge (v0.15) ──────────────────────────────────────────────
+// ─── Flare FXRP Bridge (v0.15) + x402 + Gasless (v0.19) ────────────────────
 export {
   FlareClient, FlareContractsRegistry, createFlareClient, FLARE_CONTRACT_REGISTRY_ADDRESS,
   getPersonalAccountAddress, isSmartAccount, getOperatorXrplAddresses,
@@ -263,10 +263,23 @@ export {
   getDirectMintingFees, getDirectMintingPaymentAddress, preflightDirectMintingLimits,
   XRP_SCALE, DIRECT_MINTING_MEMO_PREFIX,
   FlareBridgeClient, createFlareBridgeClient,
+  // v0.19
+  FlareX402Adapter, verifyAndSettleFlareX402, decodeFlareX402Header,
+  buildFlareX402Challenge, deployFlareX402Contracts, X402_FACILITATOR_ABI,
+  FlareGaslessForwarderClient, createGaslessExecutor, deployFlareGaslessForwarder,
+  PAYMENT_REQUEST_TYPES, FORWARDER_ABI,
 } from './flare/index.js';
 export type {
   FlareClientConfig, FlareContractName,
   FlareVault, FlareAgentVault,
   DirectMintingFees, DirectMintingQuote, DirectMintingPreflight,
   FlareBridgeConfig, FlareMintParams, FlareMintReceipt,
+  // v0.19
+  FlareX402Payload, VerifyAndSettleParams, VerifyAndSettleResult,
+  ContractArtifact, DeployFlareX402Params, DeployFlareX402Result,
+  FlareGaslessClientConfig, FlarePaymentRequest, FlareGaslessStatus,
+  FlareGaslessExecuteResult, GaslessRelayerHandlerConfig, DeployFlareGaslessParams,
 } from './flare/index.js';
+
+// ─── Flare merchant paywall deps (v0.19) ────────────────────────────────────
+export type { FlareMerchantDeps } from './middleware.js';

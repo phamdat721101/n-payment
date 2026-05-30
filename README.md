@@ -4,6 +4,8 @@ The payment layer for AI agents. One SDK, every protocol.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
+**v0.19 highlights:** Flare agentic payments — `FlareX402Adapter` (buyer EIP-3009 against MockUSDT0 + on-chain `X402Facilitator`), thin `createPaywall` extension for selling APIs on Flare, `FlareGaslessForwarderClient` (sends FXRP gaslessly via custom EIP-712 forwarder + relayer), `FlareBridgeClient.executeGaslessFxrpPayment(...)` facade, three Flare networks (Coston2 + Songbird + Flare mainnet), one-shot viem deploy helpers for MockUSDT0 + X402Facilitator + GaslessPaymentForwarder, standalone Express relayer (`examples/flare-gasless-relayer.ts`), and `pay-flare-x402.sh` skill.
+
 **v0.17 highlights:** GOAT USDC Acquisition Router — agents on GOAT Network self-fund USDC on a 402 challenge by picking the cheapest available rail: in-GOAT `PegBTC→USDC` swap (OKU/Uniswap V3), cross-chain `LayerZero V2 OFT` from Base/Polygon/Arbitrum/Optimism/BSC/Metis, or `BTC L1 → BitVM peg-in → PegBTC`. One-line presets (`safeDefaults`, `swapOnly`, `aggressive`, `testnet`), per-wallet mutex, idempotency cache, dry-run mode, partial-fill, PSBT-tampering guard, separate spending caps via `SpendingGuard.checkAcquisition()`, and Mock adapters that ship deterministic receipts for testnet/CI without external endpoints.
 
 **v0.15 highlights:** Flare FXRP direct-minting bridge on Coston2 testnet — one XRPL `Payment` to the FAssets Core Vault with a 32-byte memo and the caller's auto-resolved Flare PersonalAccount receives FXRP. Fire-and-forget, viem-based, no operator self-host required.
@@ -93,7 +95,9 @@ const data = await response.json();
 | **Morph Hoodi Testnet** | `morph-hoodi-testnet` | Morph x402 | **Testing** |
 | **Creditcoin** | `creditcoin-mainnet` | SpaceRouter | **Agentic bandwidth, residential proxy ($SPACE)** |
 | **Creditcoin CC3 Testnet** | `creditcoin-testnet` | SpaceRouter | **Testing** |
-| **Flare Coston2 Testnet** | `flare-coston2-testnet` | Flare FXRP | **XRP→FXRP direct-minting bridge (v0.15)** |
+| **Flare Coston2 Testnet** | `flare-coston2-testnet` | Flare FXRP + x402 | **XRP→FXRP bridge + MockUSDT0 x402 + gasless FXRP (v0.19)** |
+| **Flare Songbird Mainnet** | `flare-songbird-mainnet` | Flare FXRP + x402 | **Canary network (v0.19)** |
+| **Flare Mainnet** | `flare-mainnet` | Flare FXRP + x402 | **Production agentic-payment network (v0.19)** |
 
 ---
 
@@ -685,6 +689,110 @@ const result = await router.acquire({ targetUsdcWei: 5_000_000n, idempotencyKey:
 | `GOAT_AUTOFUND_LIMIT_EXCEEDED` | Hourly/daily acquisition cap hit |
 | `GOAT_SWAP_SLIPPAGE_EXCEEDED` | OKU quote breached `maxSlippageBps` |
 | `GOAT_OFT_FEE_TOO_HIGH` | LZ V2 quote breached `maxFeeBps` |
+
+## Quick Start — Flare Agentic Payments (v0.19)
+
+Two complementary flows on Flare's three networks (Coston2 testnet, Songbird, Flare mainnet):
+
+**1. x402 with MockUSDT0** — pay APIs on Flare via EIP-3009 + on-chain `X402Facilitator` contract. Standard x402 flow; merchant calls the facilitator to verify+settle.
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const buyer = createPaymentClient({
+  chains: ['flare-coston2-testnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.PRIVATE_KEY },
+  flare: {
+    network: 'coston2-testnet',
+    x402: {
+      tokenAddress: process.env.FLARE_X402_TOKEN_ADDRESS as `0x${string}`,
+      facilitatorAddress: process.env.FLARE_X402_FACILITATOR_ADDRESS as `0x${string}`,
+    },
+  },
+});
+
+await buyer.fetchWithPayment('https://api.example.com/data');
+```
+
+**Sell APIs on Flare** — extend `createPaywall` with a `flare` route + viem clients; the merchant settles on-chain inside the middleware.
+
+```typescript
+import express from 'express';
+import { createPaywall } from 'n-payment';
+import { createPublicClient, createWalletClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const merchant = privateKeyToAccount(process.env.MERCHANT_KEY as `0x${string}`);
+const chain = { /* ...flare-coston2 viem chain def... */ } as never;
+const publicClient = createPublicClient({ chain, transport: http() });
+const walletClient = createWalletClient({ account: merchant, chain, transport: http() });
+
+const app = express();
+app.use(express.json());
+app.use(
+  createPaywall(
+    {
+      routes: {
+        'GET /api/data': {
+          price: '100000', // 0.1 USDT0 (6 decimals)
+          flare: {
+            payTo: merchant.address,
+            asset: process.env.FLARE_X402_TOKEN_ADDRESS as `0x${string}`,
+            facilitatorAddress: process.env.FLARE_X402_FACILITATOR_ADDRESS as `0x${string}`,
+            chainId: 114, network: 'flare-coston2',
+          },
+        },
+      },
+    },
+    { publicClient, walletClient },
+  ),
+);
+```
+
+**2. Gasless FXRP transfers** — send FXRP without holding FLR for gas. One-time `approve(MaxUint256)` to the forwarder; subsequent payments are sponsored by your relayer.
+
+```typescript
+import {
+  createFlareClient,
+  FlareGaslessForwarderClient,
+  FlareBridgeClient,
+} from 'n-payment';
+import { createPublicClient, createWalletClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const flare = createFlareClient({ network: 'coston2-testnet' });
+const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+const publicClient = createPublicClient({ chain: flare.publicClient.chain!, transport: http() });
+const walletClient = createWalletClient({ account, chain: flare.publicClient.chain!, transport: http() });
+
+const gasless = new FlareGaslessForwarderClient({
+  publicClient: publicClient as never,
+  walletClient: walletClient as never,
+  forwarderAddress: process.env.FLARE_FORWARDER_ADDRESS as `0x${string}`,
+  relayerUrl: 'http://localhost:3000',
+});
+
+// One-time setup: approve the forwarder.
+const status = await gasless.getStatus(account.address);
+if (status.needsApproval) await gasless.approve();
+
+// Send 0.1 FXRP gaslessly. Sponsor (your relayer) pays FLR.
+await gasless.pay({ to: '0xRecipient' as `0x${string}`, amount: 100_000n });
+```
+
+**Run your own relayer** — `pnpm tsx examples/flare-gasless-relayer.ts` boots an Express service on `:3000` with `POST /execute`, `GET /nonce/:addr`, `GET /healthz`. The sponsor account pays FLR for gas.
+
+**Try it locally:**
+```bash
+# Compile contracts via Flare's Hardhat starter, then:
+export FLARE_PRIVATE_KEY=0x... X402_ARTIFACT_DIR=...
+pnpm tsx examples/flare-payments-demo.ts deploy-x402     # one-shot deploy MockUSDT0 + X402Facilitator
+pnpm tsx examples/flare-payments-demo.ts x402            # buyer + merchant in one process
+pnpm tsx examples/flare-payments-demo.ts deploy-gasless  # GaslessPaymentForwarder
+pnpm tsx examples/flare-payments-demo.ts gasless         # buyer flow against running relayer
+```
+
+See [`docs/PRD-flare-agentic-payments.md`](./docs/PRD-flare-agentic-payments.md) for full architecture, decisions, and operational notes.
 
 ## Quick Start — Flare FXRP Bridge (v0.15)
 

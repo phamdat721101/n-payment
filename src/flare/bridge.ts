@@ -16,6 +16,7 @@ import {
 } from './direct-minting.js';
 import { getPersonalAccountAddress } from './state.js';
 import type { FlareClient } from './client.js';
+import type { FlareGaslessForwarderClient, FlareGaslessExecuteResult } from './gasless.js';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -23,6 +24,8 @@ export interface FlareBridgeConfig {
   flare: FlareClient;
   xrplWallet: XrplWallet;
   xrplConnection: XrplConnection;
+  /** v0.19: optional dep that unlocks executeGaslessFxrpPayment(). */
+  gaslessForwarder?: FlareGaslessForwarderClient;
 }
 
 export interface FlareMintParams {
@@ -136,6 +139,28 @@ export class FlareBridgeClient {
       coreVaultXrplAddress,
       rateLimit,
     };
+  }
+
+  /**
+   * v0.19: send FXRP gaslessly via the GaslessPaymentForwarder relayer.
+   * Requires `gaslessForwarder` to be passed in {@link FlareBridgeConfig}.
+   * Caller must have done a one-time `gaslessForwarder.approve(MaxUint256)`
+   * before the first payment.
+   */
+  async executeGaslessFxrpPayment(params: {
+    to: Address;
+    /** Raw FXRP units (drops/UBA). For human input, format via formatXrpDropsAmount. */
+    amount: bigint;
+    deadlineSeconds?: number;
+  }): Promise<FlareGaslessExecuteResult> {
+    if (!this.deps.gaslessForwarder) {
+      throw new NPaymentError(
+        'Gasless FXRP payments require gaslessForwarder dep on FlareBridgeConfig',
+        'FLARE_GASLESS_NOT_CONFIGURED',
+        'Construct FlareGaslessForwarderClient and pass it as gaslessForwarder — see examples/flare-payments-demo.ts.',
+      );
+    }
+    return this.deps.gaslessForwarder.pay(params);
   }
 
   /**

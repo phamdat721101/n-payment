@@ -47,3 +47,38 @@ export type {
   FlareMintParams,
   FlareMintReceipt,
 } from './bridge.js';
+
+// ─── v0.19: x402 (MockUSDT0) — buyer adapter + merchant settle + deploy helper ─
+export {
+  FlareX402Adapter,
+  verifyAndSettleFlareX402,
+  decodeFlareX402Header,
+  buildFlareX402Challenge,
+  deployFlareX402Contracts,
+  X402_FACILITATOR_ABI,
+} from './x402.js';
+export type {
+  FlareX402Payload,
+  VerifyAndSettleParams,
+  VerifyAndSettleResult,
+  ContractArtifact,
+  DeployFlareX402Params,
+  DeployFlareX402Result,
+} from './x402.js';
+
+// ─── v0.19: Gasless FXRP forwarder — client + relayer + deploy helper ─────────
+export {
+  FlareGaslessForwarderClient,
+  createGaslessExecutor,
+  deployFlareGaslessForwarder,
+  PAYMENT_REQUEST_TYPES,
+  FORWARDER_ABI,
+} from './gasless.js';
+export type {
+  FlareGaslessClientConfig,
+  FlarePaymentRequest,
+  FlareGaslessStatus,
+  FlareGaslessExecuteResult,
+  GaslessRelayerHandlerConfig,
+  DeployFlareGaslessParams,
+} from './gasless.js';

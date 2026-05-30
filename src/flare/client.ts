@@ -13,18 +13,34 @@ import { flareContractRegistryAbi } from './abis.js';
 export const FLARE_CONTRACT_REGISTRY_ADDRESS =
   '0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019' as const;
 
-/** Per-network public RPC defaults. v0.15 ships Coston2 testnet only. */
+/** Per-network public RPC defaults. v0.19: Coston2 testnet + Songbird + Flare mainnet. */
 const RPC_URLS: Readonly<Record<FlareNetwork, string>> = Object.freeze({
   'coston2-testnet': 'https://coston2-api.flare.network/ext/C/rpc',
+  'songbird-mainnet': 'https://songbird-api.flare.network/ext/C/rpc',
+  'flare-mainnet': 'https://flare-api.flare.network/ext/C/rpc',
 });
 
-/** Inline chain definition — avoids depending on viem's per-version chain list. */
-const COSTON2_TESTNET = defineChain({
-  id: 114,
-  name: 'Flare Coston2 Testnet',
-  nativeCurrency: { name: 'Coston2 Flare', symbol: 'C2FLR', decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URLS['coston2-testnet']] } },
-  testnet: true,
+/** Per-network viem chain definitions (avoids depending on viem's per-version chain list). */
+const CHAIN_DEFS: Readonly<Record<FlareNetwork, ReturnType<typeof defineChain>>> = Object.freeze({
+  'coston2-testnet': defineChain({
+    id: 114,
+    name: 'Flare Coston2 Testnet',
+    nativeCurrency: { name: 'Coston2 Flare', symbol: 'C2FLR', decimals: 18 },
+    rpcUrls: { default: { http: [RPC_URLS['coston2-testnet']] } },
+    testnet: true,
+  }),
+  'songbird-mainnet': defineChain({
+    id: 19,
+    name: 'Songbird',
+    nativeCurrency: { name: 'Songbird', symbol: 'SGB', decimals: 18 },
+    rpcUrls: { default: { http: [RPC_URLS['songbird-mainnet']] } },
+  }),
+  'flare-mainnet': defineChain({
+    id: 14,
+    name: 'Flare',
+    nativeCurrency: { name: 'Flare', symbol: 'FLR', decimals: 18 },
+    rpcUrls: { default: { http: [RPC_URLS['flare-mainnet']] } },
+  }),
 });
 
 /** Contract names registered in the FlareContractRegistry — exact strings matter. */
@@ -101,20 +117,20 @@ export class FlareClient {
 
   constructor(config: FlareClientConfig = {}) {
     this.network = config.network ?? 'coston2-testnet';
-    if (this.network !== 'coston2-testnet') {
+    if (!CHAIN_DEFS[this.network]) {
       throw new NPaymentError(
         `Unsupported Flare network: ${this.network}`,
         'FLARE_UNSUPPORTED_NETWORK',
-        'v0.15 ships Coston2 testnet only. Mainnet support lands in v0.16.',
+        `Use one of: ${Object.keys(CHAIN_DEFS).join(', ')}.`,
       );
     }
 
     this.publicClient =
       config.publicClient ??
       createPublicClient({
-        chain: COSTON2_TESTNET,
+        chain: CHAIN_DEFS[this.network],
         transport: http(config.rpcUrl ?? RPC_URLS[this.network]),
-      });
+      } as never);
 
     this.registry = new FlareContractsRegistry(
       this.publicClient,

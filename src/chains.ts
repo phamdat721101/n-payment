@@ -202,16 +202,47 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     facilitator: 'https://gateway.spacerouter.org',
   },
   // v0.15: Flare Coston2 testnet for FXRP direct-minting bridge.
-  // Faucet: https://faucet.flare.network/coston2 (C2FLR + FXRP + USDT0).
-  // FXRP token, AssetManager, MasterAccountController are resolved on-chain
-  // via FlareContractRegistry → never hardcode per-version addresses here.
+  // v0.19: extends to flare-x402 (MockUSDT0 + X402Facilitator) and gasless FXRP forwarder.
+  // FXRP token + AssetManager are resolved on-chain via FlareContractRegistry —
+  // never hardcoded. MockUSDT0 + X402Facilitator + GaslessPaymentForwarder are
+  // caller-deployed (see examples/flare-payments-demo.ts deploy mode); the zero-
+  // address slots below are filled by user via FlareConfig.{x402,gasless}.
   'flare-coston2-testnet': {
     chainId: 114,
     caip2: 'eip155:114',
     name: 'Flare Coston2 Testnet',
     rpcUrl: 'https://coston2-api.flare.network/ext/C/rpc',
-    protocols: ['flare-fxrp'],
-    tokens: { FXRP: '0x0000000000000000000000000000000000000000' /* resolved on-chain */ },
+    protocols: ['flare-fxrp', 'flare-x402'],
+    tokens: {
+      FXRP: '0x0000000000000000000000000000000000000000',     // resolved on-chain via registry
+      MockUSDT0: '0x0000000000000000000000000000000000000000', // caller-supplied (deploy helper)
+    },
+  },
+  // v0.19: Songbird canary (chainId 19). FlareContractRegistry root is identical
+  // to Coston2/mainnet, so FXRP + AssetManager auto-resolve once FAssets ships there.
+  'flare-songbird-mainnet': {
+    chainId: 19,
+    caip2: 'eip155:19',
+    name: 'Songbird Mainnet',
+    rpcUrl: 'https://songbird-api.flare.network/ext/C/rpc',
+    protocols: ['flare-fxrp', 'flare-x402'],
+    tokens: {
+      FXRP: '0x0000000000000000000000000000000000000000',
+      MockUSDT0: '0x0000000000000000000000000000000000000000',
+    },
+  },
+  // v0.19: Flare mainnet (chainId 14). FXRP-on-mainnet x402 awaits production
+  // FXRP gaining EIP-3009 (per Flare docs); gasless forwarder is usable today.
+  'flare-mainnet': {
+    chainId: 14,
+    caip2: 'eip155:14',
+    name: 'Flare Mainnet',
+    rpcUrl: 'https://flare-api.flare.network/ext/C/rpc',
+    protocols: ['flare-fxrp', 'flare-x402'],
+    tokens: {
+      FXRP: '0x0000000000000000000000000000000000000000',
+      MockUSDT0: '0x0000000000000000000000000000000000000000',
+    },
   },
 };
 

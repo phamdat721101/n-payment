@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -22,7 +22,9 @@ export type ChainKey =
   | 'morph-hoodi-testnet'
   | 'creditcoin-mainnet'
   | 'creditcoin-testnet'
-  | 'flare-coston2-testnet';
+  | 'flare-coston2-testnet'
+  | 'flare-songbird-mainnet'
+  | 'flare-mainnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -90,21 +92,54 @@ export interface XrplTreasuryConfigInput {
   sweepDebounceMs?: number;
 }
 
-// ─── Flare (v0.15) ───────────────────────────────────────────────────────────
+// ─── Flare (v0.15 + v0.19) ───────────────────────────────────────────────────
 
-export type FlareNetwork = 'coston2-testnet';
+export type FlareNetwork = 'coston2-testnet' | 'songbird-mainnet' | 'flare-mainnet';
 
 /**
- * Flare FXRP bridge configuration.
- *
- * v0.15 ships a mint-only MVP: XRP → FXRP via FAssets direct-minting on Coston2,
- * with the 32-byte memo format. Caller's PersonalAccount is the auto-resolved recipient.
- * Mainnet, redemption, and the FXRP paywall adapter land in v0.16+.
+ * v0.19: x402-on-Flare (MockUSDT0) buyer + merchant config.
+ * Flare's x402 spec uses an on-chain X402Facilitator (not an HTTP service);
+ * both addresses must be caller-supplied (use the deploy helper in
+ * src/flare/x402.ts). EIP-712 domain defaults are 'Mock USDT0' / version '1'
+ * to match Flare's published demo — override when FXRP itself eventually
+ * implements EIP-3009 and the same adapter is used with FXRP as the asset.
+ */
+export interface FlareX402Config {
+  /** EIP-3009 token (MockUSDT0 today, FXRP once it implements EIP-3009). */
+  tokenAddress: `0x${string}`;
+  /** Deployed X402Facilitator contract (verifyPayment + settlePayment). */
+  facilitatorAddress: `0x${string}`;
+  /** EIP-712 domain name on the token contract. @default 'Mock USDT0' */
+  tokenName?: string;
+  /** EIP-712 domain version on the token contract. @default '1' */
+  tokenVersion?: string;
+  /** Authorization lifetime in seconds. @default 300 (5 min) */
+  validityWindowSeconds?: number;
+}
+
+/**
+ * v0.19: Gasless FXRP forwarder config. Different EIP-712 type than x402 —
+ * uses GaslessPaymentForwarder.PaymentRequest, not EIP-3009. One-time
+ * approve(MaxUint256) is required before the first payment.
+ */
+export interface FlareGaslessConfig {
+  /** Deployed GaslessPaymentForwarder contract. */
+  forwarderAddress: `0x${string}`;
+  /** Relayer HTTP base URL (must expose POST /execute and GET /nonce/:addr). */
+  relayerUrl: string;
+  /** Default deadline window in seconds. @default 1800 (30 min) */
+  deadlineSeconds?: number;
+}
+
+/**
+ * Flare configuration. v0.15 ships FXRP minting; v0.19 adds x402 (MockUSDT0)
+ * and gasless FXRP transfers. Sub-configs are optional — the SDK soft-disables
+ * each adapter when its config is absent (warn + skip, mirrors Morph pattern).
  */
 export interface FlareConfig {
-  /** Flare network. Only Coston2 testnet is supported in v0.15. @default 'coston2-testnet' */
+  /** Flare network. @default 'coston2-testnet' */
   network?: FlareNetwork;
-  /** Override Flare RPC URL. Default: per-network public Coston2 cluster. */
+  /** Override Flare RPC URL. Default: per-network public cluster. */
   rpcUrl?: string;
   /**
    * Override the FlareContractRegistry root address.
@@ -113,6 +148,10 @@ export interface FlareConfig {
   contractRegistry?: `0x${string}`;
   /** Throw on missing rpcUrl/credentials instead of warning + disabling. @default false */
   strict?: boolean;
+  /** v0.19: x402 (MockUSDT0) buyer config. */
+  x402?: FlareX402Config;
+  /** v0.19: Gasless FXRP forwarder config. */
+  gasless?: FlareGaslessConfig;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -386,6 +425,21 @@ export interface PaywallRouteConfig {
    * Set `scheme: 'eip3009'` for sponsored EIP-3009 transferWithAuthorization on Hoodi (v0.18).
    */
   morph?: { payTo: string; asset?: string; network?: string; scheme?: 'exact' | 'eip3009' };
+  /**
+   * v0.19: Flare x402 paywall route. The merchant calls X402Facilitator on-chain to
+   * verify + settle payments (EIP-3009 transferWithAuthorization on MockUSDT0).
+   * Defaults: `network='flare-coston2'`, `chainId=114`, `tokenName='Mock USDT0'`,
+   * `tokenVersion='1'`. Override per-deploy.
+   */
+  flare?: {
+    payTo: `0x${string}`;
+    asset: `0x${string}`;
+    facilitatorAddress: `0x${string}`;
+    network?: string;
+    chainId?: number;
+    tokenName?: string;
+    tokenVersion?: string;
+  };
 }
 
 export interface PaywallConfig {
