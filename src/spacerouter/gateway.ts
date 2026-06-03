@@ -165,9 +165,11 @@ export class SpaceRouterGatewayClient {
     return 'SR_GATEWAY_ERROR';
   }
   private errorHintFor(status: number): string | undefined {
-    if (status === 402) return 'Top up SPACE in escrow.';
-    if (status === 407) return 'Check API key / EIP-712 signature; ensure headers are on the proxy CONNECT.';
-    if (status === 503) return 'No provider matches your region/ipType filter — relax filters or retry later.';
+    if (status === 402) return 'Top up SPACE escrow: client.deposit(parseSpace("1")).';
+    if (status === 407) return 'Check API key / EIP-712 signature; ensure receipt headers are on the proxy CONNECT, not the inner request.';
+    if (status === 429) return 'Rate-limited by the gateway. Back off and retry, or raise autoEscrow.syncIntervalMs to flush less aggressively.';
+    if (status === 503) return 'No provider matches your region/ipType filter — relax filters with client.withRouting({}) or retry later.';
+    if (status === 502 || status === 504) return 'Provider unreachable mid-request. Retry once; if persistent, check the SpaceRouter status page.';
     return undefined;
   }
 }

@@ -25,7 +25,7 @@ import type {
 } from '../types.js';
 import { NPaymentError } from '../errors.js';
 import type { SpaceRouterSigner } from './signer.js';
-import { SpaceRouterEscrowClient } from './escrow.js';
+import { SpaceRouterEscrowClient, EscrowEmptyError } from './escrow.js';
 import {
   SpaceRouterGatewayClient, SpaceRouterReceiptScheduler, type SyncResult,
 } from './gateway.js';
@@ -68,7 +68,7 @@ export class SpaceRouterPeerDepMissingError extends NPaymentError {
     super(
       'Peer dependency @spacenetwork/spacerouter is not installed',
       'SR_PEER_DEP_MISSING',
-      'Install with: npm install @spacenetwork/spacerouter (or pnpm/yarn equivalent).',
+      'Install it (one-time): `pnpm add @spacenetwork/spacerouter` (or `npm i @spacenetwork/spacerouter` / `yarn add @spacenetwork/spacerouter`).',
     );
   }
 }
@@ -177,14 +177,26 @@ export class SpaceRouterClient {
 
   // ── private ──
 
-  /** Auto-deposit when balance dips below minBalance, if autoEscrow is configured. */
+  /**
+   * Preflight: read the consumer's escrow balance.
+   *
+   * - If `autoEscrow.minBalance` is configured and balance dips below it, top up.
+   * - If balance is exactly zero AND no top-up is configured, throw `EscrowEmptyError`
+   *   BEFORE we touch the wrapped peer-dep loader. This surfaces the first-time
+   *   "zero crypto" condition with an actionable hint instead of letting it surface
+   *   as an obscure gateway 402 (or worse, a peer-dep import error).
+   */
   private async ensureBalance(): Promise<void> {
     const auto = this.config.autoEscrow;
-    if (!auto?.minBalance || !auto.topUpAmount) return;
     const consumer = (await this.signer.getAddress()) as Address;
     const balance = await this.escrow.getBalance(consumer);
-    if (balance < auto.minBalance) {
+    if (auto?.minBalance && auto.topUpAmount && balance < auto.minBalance) {
       await this.escrow.deposit(auto.topUpAmount);
+      return;
+    }
+    if (balance === 0n) {
+      // No autoEscrow configured AND wallet is empty — fail fast with a clear hint.
+      throw new EscrowEmptyError(0n, 1n);
     }
   }
 

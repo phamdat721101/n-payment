@@ -105,23 +105,21 @@ export class MorphX402Client {
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (needsAuth) {
-      if (!this.accessKey || !this.secretKey) {
-        throw new NPaymentError(
-          `Morph ${endpoint} requires accessKey and secretKey`,
-          'MORPH_NO_CREDENTIALS',
-          'Register at https://morph-rails.morph.network/x402 to obtain credentials',
+      // v0.20: HMAC is OPTIONAL when no creds are set — supports self-hosted
+      // permissive facilitators (Morph Hoodi local sponsor on :4040). When
+      // creds ARE set, the request is signed (mainnet rails parity).
+      if (this.accessKey && this.secretKey) {
+        Object.assign(
+          headers,
+          signMorphRequest({
+            method,
+            path: fullPath,
+            body: bodyStr,
+            accessKey: this.accessKey,
+            secretKey: this.secretKey,
+          }),
         );
       }
-      Object.assign(
-        headers,
-        signMorphRequest({
-          method,
-          path: fullPath,
-          body: bodyStr,
-          accessKey: this.accessKey,
-          secretKey: this.secretKey,
-        }),
-      );
     }
 
     const controller = new AbortController();

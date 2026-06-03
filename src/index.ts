@@ -236,6 +236,8 @@ export {
   SpaceRouterEscrowClient, SpaceRouterGatewayClient, SpaceRouterReceiptScheduler,
   KeypairSpaceRouterSigner, OWSSpaceRouterSigner, BrowserSpaceRouterSigner,
   EscrowEmptyError, WithdrawalLockedError, WithdrawalAlreadyPendingError,
+  InvalidAmountError as SpaceRouterInvalidAmountError,
+  parseSpace, formatSpace, SPACE_DECIMALS,
   spaceRouterDomain, SPACEROUTER_RECEIPT_TYPES,
 } from './spacerouter/index.js';
 

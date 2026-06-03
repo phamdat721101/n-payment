@@ -8,6 +8,13 @@ import {
   encodeAuthorizationPayload,
   randomEip3009Nonce,
 } from '../morph/eip3009.js';
+import { createPublicClient, http, type Address } from 'viem';
+
+/** v0.20: Optional EIP-712 domain overrides for sponsored mode (eip3009). */
+export interface MorphX402AdapterOptions {
+  tokenName?: string;
+  tokenVersion?: string;
+}
 
 /**
  * Morph x402 adapter — single responsibility: orchestrate the Morph payment flow.
@@ -21,15 +28,23 @@ import {
  *      sign EIP-712 TransferWithAuthorization → settle({authorization,signature})
  *      facilitator submits on-chain (sponsor pays gas) → retry
  *
+ *  v0.20: paySponsored() now resolves the EIP-712 `name`/`version` from the
+ *  USDC contract on-chain when overrides are not supplied. This fixes the
+ *  Hoodi USDC mismatch (name=`'USDC'`) without breaking mainnet behavior.
+ *
  * Routing: chain-config-driven (detect() inspects the 402 network field).
  */
 export class MorphX402Adapter implements PaymentAdapter {
   readonly protocol = 'morph-x402';
 
+  /** Cache of resolved EIP-712 domain per asset address (string keyed for simplicity). */
+  private domainCache = new Map<string, { name: string; version: string }>();
+
   constructor(
     private readonly wallet: OWSWallet,
     private readonly client: MorphX402Client,
     private readonly chainKey: ChainKey,
+    private readonly opts: MorphX402AdapterOptions = {},
   ) {}
 
   detect(response: Response): boolean {
@@ -128,8 +143,13 @@ export class MorphX402Adapter implements PaymentAdapter {
       validBefore: BigInt(now + 300), // 5 min window
       nonce: randomEip3009Nonce(),
     };
+    // v0.20: resolve EIP-712 domain (name/version) for the asset. Hoodi USDC uses
+    // name='USDC' (not Circle's mainnet 'USD Coin'); resolving on-chain is the
+    // robust default. Caller may bypass via MorphConfig.tokenName/tokenVersion.
+    const dom = await this.resolveEip712Domain(asset, chainId);
     const td = buildTransferWithAuthorizationTypedData({
       verifyingContract: asset, chainId, authorization,
+      tokenName: dom.name, tokenVersion: dom.version,
     });
     const signature = await this.wallet.signTypedData({
       domain: td.domain, types: td.types, primaryType: 'TransferWithAuthorization',
@@ -161,6 +181,59 @@ export class MorphX402Adapter implements PaymentAdapter {
       throw new NPaymentError('Morph settle returned no transaction hash', 'MORPH_SETTLE_NO_TX');
     }
     return { txHash: settleRes.transaction, payer: settleRes.payer ?? fromAddress, network: settleRes.network };
+  }
+
+  /**
+   * v0.20: Resolve the EIP-712 domain `name`/`version` for an ERC-20 asset.
+   * Resolution order:
+   *   1. Constructor opts.tokenName / opts.tokenVersion (caller override).
+   *   2. On-chain `name()` / `version()` reads against the chain's RPC.
+   *   3. Fallback to Circle FiatTokenV2 defaults: 'USD Coin' / '2'.
+   * Cached per asset address for the adapter lifetime.
+   */
+  private async resolveEip712Domain(
+    asset: `0x${string}`,
+    chainId: number,
+  ): Promise<{ name: string; version: string }> {
+    const cacheKey = asset.toLowerCase();
+    const cached = this.domainCache.get(cacheKey);
+    if (cached) return cached;
+
+    let name = this.opts.tokenName;
+    let version = this.opts.tokenVersion;
+
+    if (!name || !version) {
+      const chain = CHAINS[this.chainKey];
+      try {
+        const pub = createPublicClient({ transport: http(chain.rpcUrl) });
+        const erc20Meta = [
+          { name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+          { name: 'version', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+        ] as const;
+        if (!name) {
+          name = (await pub.readContract({
+            address: asset, abi: erc20Meta, functionName: 'name',
+          })) as string;
+        }
+        if (!version) {
+          try {
+            version = (await pub.readContract({
+              address: asset, abi: erc20Meta, functionName: 'version',
+            })) as string;
+          } catch {
+            version = '2';
+          }
+        }
+      } catch {
+        // Network or contract read failure — fall back to Circle defaults.
+        name = name ?? 'USD Coin';
+        version = version ?? '2';
+      }
+    }
+    const resolved = { name: name ?? 'USD Coin', version: version ?? '2' };
+    this.domainCache.set(cacheKey, resolved);
+    void chainId; // referenced for symmetry; pub uses chain.rpcUrl directly.
+    return resolved;
   }
 
   // ── Shared retry-with-proof step ──────────────────────────────────────────

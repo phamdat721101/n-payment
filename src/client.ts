@@ -197,13 +197,24 @@ export class PaymentClient {
       const morphChain = getChainsForProtocol(config.chains, 'morph-x402')[0];
       const morphCfg = config.morph;
       const hasCreds = !!(morphCfg?.accessKey && morphCfg?.secretKey);
-      if (hasCreds) {
+      // v0.20: Morph Hoodi's sponsored (eip3009) flow uses a self-hosted local
+      // facilitator that does NOT require HMAC. Treat an explicit facilitatorUrl
+      // (or the Hoodi chain key) as sufficient permission to construct the adapter.
+      const facilitatorUrl = morphCfg?.facilitatorUrl ?? CHAINS[morphChain].facilitator;
+      const isHoodi = morphChain === 'morph-hoodi-testnet';
+      const allowFacilitatorOnly = !!morphCfg?.facilitatorUrl || isHoodi;
+      if (hasCreds || allowFacilitatorOnly) {
         const morphClient = new MorphX402Client({
-          accessKey: morphCfg!.accessKey,
-          secretKey: morphCfg!.secretKey,
-          baseUrl: morphCfg!.facilitatorUrl ?? CHAINS[morphChain].facilitator,
+          accessKey: morphCfg?.accessKey,
+          secretKey: morphCfg?.secretKey,
+          baseUrl: facilitatorUrl,
         });
-        this.adapters.push(new MorphX402Adapter(this.wallet, morphClient, morphChain));
+        this.adapters.push(
+          new MorphX402Adapter(this.wallet, morphClient, morphChain, {
+            tokenName: morphCfg?.tokenName,
+            tokenVersion: morphCfg?.tokenVersion,
+          }),
+        );
       } else if (morphCfg?.strict) {
         throw new AdapterNotFoundError(
           'Morph chain configured with strict mode but accessKey/secretKey missing',
@@ -212,8 +223,8 @@ export class PaymentClient {
         );
       } else {
         console.warn(
-          '[n-payment] Morph chain configured without accessKey/secretKey — Morph adapter disabled. ' +
-          'Register at https://morph-rails.morph.network/x402 to enable.',
+          '[n-payment] Morph chain configured without accessKey/secretKey or facilitatorUrl — Morph adapter disabled. ' +
+          'Register at https://morph-rails.morph.network/x402, or pass morph.facilitatorUrl for self-hosted.',
         );
       }
     }

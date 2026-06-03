@@ -12,7 +12,13 @@ import {
 } from '../src/spacerouter/gateway.js';
 import { SpaceRouterAdapter } from '../src/adapters/spacerouter.js';
 import { SpaceRouterClient, SpaceRouterPeerDepMissingError } from '../src/spacerouter/client.js';
+import {
+  SpaceRouterEscrowClient,
+  EscrowEmptyError, WithdrawalLockedError, InvalidAmountError,
+  parseSpace, formatSpace, SPACE_DECIMALS,
+} from '../src/spacerouter/escrow.js';
 import { PolicyEngine, AuditLog, SpendingGuard } from '../src/policy/index.js';
+import { parseArgs } from '../examples/spacerouter-quickstart.js';
 import { recoverTypedDataAddress, type Hex } from 'viem';
 
 const TEST_PK: Hex = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
@@ -149,10 +155,10 @@ describe('SpaceRouterAdapter.shouldFallback', () => {
   });
 });
 
-// ─── SpaceRouterClient (peer-dep absence) ──────────────────────────────────
+// ─── SpaceRouterClient (peer-dep absence + zero-balance preflight) ─────────
 
-describe('SpaceRouterClient.fetch — peer dep missing', () => {
-  it('throws SR_PEER_DEP_MISSING when @spacenetwork/spacerouter is not installed', async () => {
+describe('SpaceRouterClient.fetch — preflight + peer dep', () => {
+  it('throws SR_ESCROW_EMPTY when balance is 0 and no autoEscrow is configured', async () => {
     const signer = new KeypairSpaceRouterSigner(TEST_PK);
     const sr = new SpaceRouterClient({
       chain: CHAINS['creditcoin-testnet']!,
@@ -161,8 +167,163 @@ describe('SpaceRouterClient.fetch — peer dep missing', () => {
       tokenAddress: ESCROW,
       gatewayUrl: 'https://gw',
     });
-    await expect(sr.fetch('https://example.com')).rejects.toBeInstanceOf(SpaceRouterPeerDepMissingError);
+    const balanceSpy = vi.spyOn(SpaceRouterEscrowClient.prototype, 'getBalance').mockResolvedValue(0n);
+    await expect(sr.fetch('https://example.com')).rejects.toBeInstanceOf(EscrowEmptyError);
+    balanceSpy.mockRestore();
   });
+
+  it('throws SR_PEER_DEP_MISSING when balance is non-zero but @spacenetwork/spacerouter is missing', async () => {
+    const signer = new KeypairSpaceRouterSigner(TEST_PK);
+    const sr = new SpaceRouterClient({
+      chain: CHAINS['creditcoin-testnet']!,
+      signer,
+      escrowAddress: ESCROW,
+      tokenAddress: ESCROW,
+      gatewayUrl: 'https://gw',
+    });
+    const balanceSpy = vi.spyOn(SpaceRouterEscrowClient.prototype, 'getBalance').mockResolvedValue(10n ** 18n);
+    await expect(sr.fetch('https://example.com')).rejects.toBeInstanceOf(SpaceRouterPeerDepMissingError);
+    balanceSpy.mockRestore();
+  });
+});
+
+// ─── SPACE amount helpers ──────────────────────────────────────────────────
+
+describe('parseSpace / formatSpace', () => {
+  it('SPACE_DECIMALS is 18', () => {
+    expect(SPACE_DECIMALS).toBe(18);
+  });
+
+  it('parseSpace(string)', () => {
+    expect(parseSpace('1')).toBe(10n ** 18n);
+    expect(parseSpace('0.5')).toBe(5n * 10n ** 17n);
+    expect(parseSpace('1.5')).toBe(15n * 10n ** 17n);
+  });
+
+  it('parseSpace(number)', () => {
+    expect(parseSpace(1)).toBe(10n ** 18n);
+    expect(parseSpace(2.5)).toBe(25n * 10n ** 17n);
+  });
+
+  it('parseSpace rejects negative / non-numeric / non-finite input with SR_INVALID_AMOUNT', () => {
+    expect(() => parseSpace('-1')).toThrow(InvalidAmountError);
+    expect(() => parseSpace('-1')).toThrow(/SR_INVALID_AMOUNT|negative/i);
+    expect(() => parseSpace('abc')).toThrow(InvalidAmountError);
+    expect(() => parseSpace('')).toThrow(InvalidAmountError);
+    expect(() => parseSpace(Infinity)).toThrow(InvalidAmountError);
+    expect(() => parseSpace(NaN)).toThrow(InvalidAmountError);
+  });
+
+  it('formatSpace trims trailing zeros up to maxDecimals', () => {
+    expect(formatSpace(parseSpace('1'))).toBe('1');
+    expect(formatSpace(parseSpace('1.2345'), 2)).toBe('1.23');
+    expect(formatSpace(parseSpace('1.5'))).toBe('1.5');
+    expect(formatSpace(0n)).toBe('0');
+    expect(formatSpace(parseSpace('0.0001'), 4)).toBe('0.0001');
+  });
+});
+
+// ─── Error hint quality ────────────────────────────────────────────────────
+
+describe('SpaceRouter error hints — every code carries actionable text', () => {
+  it('EscrowEmptyError hint references parseSpace / deposit', () => {
+    const err = new EscrowEmptyError(0n, 1n);
+    expect(err.code).toBe('SR_ESCROW_EMPTY');
+    expect(err.hint ?? '').toMatch(/parseSpace|deposit/i);
+  });
+
+  it('WithdrawalLockedError hint mentions ISO date and 5 days', () => {
+    const err = new WithdrawalLockedError(1_800_000_000n);
+    expect(err.code).toBe('SR_WITHDRAW_LOCKED');
+    expect(err.message).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/); // ISO timestamp
+    expect(err.hint ?? '').toMatch(/5 days|cancelWithdrawal/i);
+  });
+
+  it('InvalidAmountError carries SR_INVALID_AMOUNT + actionable hint', () => {
+    const err = new InvalidAmountError('-1', 'negative not allowed');
+    expect(err.code).toBe('SR_INVALID_AMOUNT');
+    expect(err.hint ?? '').toMatch(/parseSpace|positive/i);
+  });
+
+  it('Gateway errorHintFor returns a non-empty hint for every documented status', () => {
+    // We exercise the public errorHintFor via the actual error-thrown path on a 4xx/5xx.
+    const fetchMock = vi.fn();
+    const gw = new SpaceRouterGatewayClient({ mgmtUrl: 'https://gw:8081', fetch: fetchMock as unknown as typeof fetch });
+    for (const status of [402, 407, 429, 503, 502, 504]) {
+      fetchMock.mockResolvedValueOnce(new Response('{"error":"x"}', { status }));
+      // The error from a failed request includes the hint in its message via NPaymentError.
+      // We catch and assert .hint is non-empty.
+      // Each iteration triggers one mock call, hence mockResolvedValueOnce.
+    }
+    return Promise.all([402, 407, 429, 503, 502, 504].map(async (status, i) => {
+      const fm = vi.fn().mockResolvedValueOnce(new Response('{"error":"x"}', { status }));
+      const g = new SpaceRouterGatewayClient({ mgmtUrl: 'https://gw:8081', fetch: fm as unknown as typeof fetch });
+      try {
+        await g.requestChallenge('0xabc');
+        throw new Error(`expected throw for ${status}`);
+      } catch (e) {
+        const err = e as NPaymentError;
+        expect(err).toBeInstanceOf(NPaymentError);
+        expect(err.hint ?? '').not.toBe('');
+        // 502/504 share SR_PROVIDER_UNREACHABLE; both must still have a hint string.
+      }
+    }));
+  });
+});
+
+// ─── examples/spacerouter-quickstart.ts argument parser ────────────────────
+
+describe('examples/spacerouter-quickstart parseArgs', () => {
+  it('parses positional + flag args', () => {
+    const r = parseArgs(['pay', '--url', 'https://x', '--region', 'KR', '--ip-type', 'residential']);
+    expect(r._).toEqual(['pay']);
+    expect(r.flags.url).toBe('https://x');
+    expect(r.flags.region).toBe('KR');
+    expect(r.flags['ip-type']).toBe('residential');
+  });
+
+  it('treats valueless flags as boolean "true"', () => {
+    const r = parseArgs(['check', '--verbose']);
+    expect(r._).toEqual(['check']);
+    expect(r.flags.verbose).toBe('true');
+  });
+
+  it('handles empty argv', () => {
+    expect(parseArgs([])).toEqual({ _: [], flags: {} });
+  });
+});
+
+// ─── Env-gated cc3-testnet integration test ────────────────────────────────
+//
+// Skipped by default. Enable with:
+//   SR_INTEGRATION=1 CREDITCOIN_PRIVATE_KEY=0x... pnpm test
+//
+// Only performs READ-ONLY RPC calls (no on-chain writes) so it's safe to run
+// without any testnet $SPACE balance — it just verifies the SDK can talk to
+// the cc3-testnet RPC and decode responses.
+
+describe.skipIf(!process.env.SR_INTEGRATION)('integration: cc3-testnet (read-only)', () => {
+  it('reads consumer address + escrow balance + decodes 18-decimal SPACE', async () => {
+    const pk = process.env.CREDITCOIN_PRIVATE_KEY as Hex | undefined;
+    if (!pk) throw new Error('CREDITCOIN_PRIVATE_KEY required when SR_INTEGRATION=1');
+
+    const escrow = new SpaceRouterEscrowClient({
+      chain: CHAINS['creditcoin-testnet']!,
+      escrowAddress: (process.env.SR_ESCROW_ADDRESS ?? ESCROW) as Hex,
+      tokenAddress: (process.env.SR_TOKEN_ADDRESS ?? ESCROW) as Hex,
+      privateKey: pk,
+    });
+    const signer = new KeypairSpaceRouterSigner(pk);
+    const consumer = await signer.getAddress();
+
+    expect(consumer).toMatch(/^0x[0-9a-f]{40}$/);
+    const balance = await escrow.getBalance(consumer);
+    expect(typeof balance).toBe('bigint');
+    expect(balance).toBeGreaterThanOrEqual(0n);
+    // formatSpace must produce a parseable decimal string.
+    const formatted = formatSpace(balance);
+    expect(formatted).toMatch(/^\d+(\.\d+)?$/);
+  }, 30_000);
 });
 
 // ─── PolicyEngine bandwidth + region rules ─────────────────────────────────

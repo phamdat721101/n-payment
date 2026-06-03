@@ -1,6 +1,81 @@
 # n-payment
 
-The payment layer for AI agents. One SDK, every protocol.
+**The SDK that lets your AI agent pay for residential proxy in $SPACE on Creditcoin — two prompts, zero crypto setup.**
+
+One npm install, one wallet, two prompts. Your agent gets unblocked from datacenter-IP-hostile sites (Cloudflare 1010/1020), pays per-byte in $SPACE on Creditcoin (chainId `102030`), and ships an on-chain audit trail with a 5-day-timelock-protected escrow. Nothing to deploy.
+
+> **v0.20 highlights** — `parseSpace`/`formatSpace` 18-decimal helpers, zero-balance preflight, sharper gateway error hints (`SR_RATE_LIMITED` / `SR_NO_PROVIDERS` / `SR_PROVIDER_UNREACHABLE` all carry actionable hints), runnable `examples/spacerouter-quickstart.ts`, agent-skill `skills/pay-spacerouter.sh`, env-gated cc3-testnet integration suite. **Backward compatible** — non-SpaceRouter chains (Flare, Morph, GOAT, XRPL, Stellar, Aave, Solana, Base/x402) untouched.
+
+```bash
+npm install n-payment
+# Optional peer-dep, only needed for `pay`:
+npm install @spacenetwork/spacerouter
+```
+
+## Two prompts, zero crypto setup (Creditcoin × SpaceRouter)
+
+**Prompt 1 — "check my balance on creditcoin-testnet"**
+
+```bash
+export CREDITCOIN_PRIVATE_KEY=0x...
+bash skills/pay-spacerouter.sh check-balance --chain creditcoin-testnet
+# → {"ok":true,"data":{"chain":"creditcoin-testnet","consumer":"0x...","balanceSpace":"0",...}}
+```
+
+**Prompt 2 — "pay for httpbin.org/ip via SpaceRouter, region KR, residential"**
+
+```bash
+bash skills/pay-spacerouter.sh pay \
+  --url https://httpbin.org/ip \
+  --region KR --ip-type residential \
+  --chain creditcoin-testnet
+# → {"ok":true,"data":{"status":200,"nodeId":"...","requestId":"...","bodyPreview":"{...}"}}
+```
+
+Same flow from TypeScript:
+
+```typescript
+import { CHAINS, SpaceRouterClient, KeypairSpaceRouterSigner, parseSpace, formatSpace } from 'n-payment';
+
+const chain  = CHAINS['creditcoin-mainnet'];
+const signer = new KeypairSpaceRouterSigner(process.env.CREDITCOIN_PRIVATE_KEY as `0x${string}`);
+const client = new SpaceRouterClient({
+  chain, signer,
+  escrowAddress: '0xC130F5D76f0b4Ce8FE2ceA0D2C2b8f53A39a5cd0', // mainnet TokenPaymentEscrow
+  tokenAddress:  '0x7ab7C6A935Ab2D1437398790C9C0660af62A80b9', // $SPACE (18 decimals)
+  privateKey:    process.env.CREDITCOIN_PRIVATE_KEY as `0x${string}`,
+  region: 'KR', ipType: 'residential',
+});
+
+// (one-time, only if balance is 0): await client.deposit(parseSpace('1'));
+const r = await client.fetch('https://httpbin.org/ip');
+console.log(r.status, await r.text());
+await client.close();
+```
+
+If escrow is empty, the SDK fails fast with `SR_ESCROW_EMPTY` and a concrete hint (`Run client.deposit(parseSpace('1')) ...`) before any network call. Every gateway failure (`SR_AUTH_FAILED` · `SR_RATE_LIMITED` · `SR_NO_PROVIDERS` · `SR_PROVIDER_UNREACHABLE`) carries an actionable hint, so your agent never sees a raw stack trace.
+
+**Why Creditcoin** — `creditcoin-mainnet` (chainId `102030`) and `creditcoin-testnet` (`102031`) are first-class entries in `chains.ts`. The SDK already knows the RPC, the $SPACE token (18 decimals — handled by `parseSpace`/`formatSpace`), and the `gateway.spacerouter.org` facilitator. EVM-compatible — same viem/ethers/hardhat your agent already uses. See [`docs/PRD-creditcoin-spacerouter-wedge.md`](docs/PRD-creditcoin-spacerouter-wedge.md) for the full architecture and the [Substack outline](docs/SUBSTACK-OUTLINE-why-creditcoin.md) for the BD case.
+
+**Try it locally:**
+
+```bash
+# Read-only — no $SPACE required:
+npx tsx examples/spacerouter-quickstart.ts check
+
+# Send a request through SpaceRouter (peer-dep + funded escrow required):
+pnpm add @spacenetwork/spacerouter
+npx tsx examples/spacerouter-quickstart.ts pay --url https://httpbin.org/ip --region KR --ip-type residential
+
+# Run the env-gated integration test against cc3-testnet (read-only RPC):
+SR_INTEGRATION=1 CREDITCOIN_PRIVATE_KEY=0x... pnpm test tests/spacerouter.test.ts
+```
+
+---
+
+## Other protocols
+
+n-payment v0.19 unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), [Aave](https://aave.com), [Flare FXRP + x402 + Gasless](https://flare.network), and [Morph](https://morphl2.io) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 

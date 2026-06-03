@@ -14,6 +14,8 @@ export {
 export type { EscrowClientConfig, WithdrawalRequest } from './escrow.js';
 export {
   SpaceRouterEscrowClient, EscrowEmptyError, WithdrawalLockedError, WithdrawalAlreadyPendingError,
+  InvalidAmountError,
+  parseSpace, formatSpace, SPACE_DECIMALS,
   ERC20_ABI, ESCROW_ABI,
 } from './escrow.js';
 

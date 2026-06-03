@@ -259,6 +259,16 @@ export interface MorphConfig {
   strict?: boolean;
   /** AltFee gas abstraction config — v0.10 feature, throws NOT_IMPLEMENTED if enabled. */
   altFee?: { enabled?: boolean; token?: 'USDC' | 'USDT0' | 'BGB' };
+  /**
+   * v0.20: Override the EIP-712 domain `name` for `transferWithAuthorization`
+   * signing under scheme=eip3009. Required on chains where the deployed USDC
+   * uses a non-default name — e.g. Morph Hoodi USDC reports `name() = 'USDC'`,
+   * NOT the Circle FiatTokenV2 default of `'USD Coin'`. When omitted the SDK
+   * auto-resolves by reading `name()` from the asset contract.
+   */
+  tokenName?: string;
+  /** v0.20: Override the EIP-712 domain `version` (default auto-resolves via `version()`, then '2'). */
+  tokenVersion?: string;
 }
 
 // ─── SpaceRouter (v0.11) ─────────────────────────────────────────────────────

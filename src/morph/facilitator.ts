@@ -177,8 +177,14 @@ async function runVerify(
   let auth: ReturnType<typeof decodeAuthorizationPayload>;
   let signature: Hex;
   try {
-    auth = decodeAuthorizationPayload(payload.authorization);
-    signature = payload.signature as Hex;
+    // The adapter wraps the EIP-3009 fields inside paymentPayload.payload.{authorization,signature}
+    // (matching the x402 v2 envelope: { scheme, network, payload }). Older clients sometimes
+    // flatten them onto paymentPayload directly — accept both for compat.
+    const inner = (payload.payload && typeof payload.payload === 'object')
+      ? (payload.payload as Record<string, unknown>)
+      : payload;
+    auth = decodeAuthorizationPayload(inner.authorization);
+    signature = inner.signature as Hex;
     if (!signature || !signature.startsWith('0x')) throw new Error('signature missing or malformed');
   } catch (err) {
     return fail(400, `invalid authorization payload: ${(err as Error).message}`, 'BAD_AUTHORIZATION');
