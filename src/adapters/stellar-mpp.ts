@@ -2,6 +2,7 @@ import type { PaymentAdapter, PaymentContext, ChainKey } from '../types.js';
 import type { StellarSigner } from '../stellar/signer.js';
 import { CHAINS } from '../chains.js';
 import { NPaymentError } from '../errors.js';
+import { attachKyaIfRequired, type StellarKyaCredentialFetcher } from '../stellar/kya.js';
 
 /**
  * Stellar MPP Charge adapter — wraps @stellar/mpp/charge/client.
@@ -9,6 +10,9 @@ import { NPaymentError } from '../errors.js';
  * Modes:
  *   - 'pull' (default) — server broadcasts the signed transaction; supports sponsored fees
  *   - 'push'           — client broadcasts; sends tx hash for server verification
+ *
+ * v0.21 — optional KYA fetcher: when challenge contains `kya_required="true"`, the adapter
+ * attaches `x-kya-credential` on the retry. No-op when not declared.
  *
  * Routing: detects www-authenticate "Payment" + Stellar SAC contract in the asset field.
  */
@@ -21,6 +25,8 @@ export class StellarMppAdapter implements PaymentAdapter {
     private readonly signer: StellarSigner,
     private readonly chainKey: ChainKey,
     private readonly mode: MppChargeMode = 'pull',
+    /** v0.21 — optional KYA fetcher for endpoints declaring kya_required="true" in www-authenticate. */
+    private readonly kyaFetcher?: StellarKyaCredentialFetcher,
   ) {}
 
   detect(response: Response): boolean {
@@ -53,22 +59,25 @@ export class StellarMppAdapter implements PaymentAdapter {
     retryHeaders.set('x-payment-network', challenge.network);
     retryHeaders.set('x-payment-from', this.signer.address);
     if (ctx?.referenceKey) retryHeaders.set('x-payment-reference-key', ctx.referenceKey);
+    // v0.21 — KYA pass-through. No-op when challenge omits the directive.
+    await attachKyaIfRequired(retryHeaders, { kya_required: challenge.kyaRequired }, this.kyaFetcher, this.signer.address);
     return fetch(url, { ...init, headers: retryHeaders });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  private parseChallenge(response: Response): { recipient: string; amount: string; currency: string; network: string } {
+  private parseChallenge(response: Response): { recipient: string; amount: string; currency: string; network: string; kyaRequired: boolean } {
     const auth = response.headers.get('www-authenticate') ?? '';
     const get = (k: string): string | undefined => auth.match(new RegExp(`${k}="([^"]+)"`))?.[1];
     const recipient = get('recipient');
     const amount = get('amount');
     const currency = get('currency');
     const network = get('network') ?? CHAINS[this.chainKey].caip2;
+    const kyaRequired = (get('kya_required') ?? 'false').toLowerCase() === 'true';
     if (!recipient || !amount || !currency) {
       throw new NPaymentError('Stellar MPP challenge missing recipient/amount/currency', 'STELLAR_MPP_BAD_CHALLENGE');
     }
-    return { recipient, amount, currency, network };
+    return { recipient, amount, currency, network, kyaRequired };
   }
 
   private passphrase(): string {

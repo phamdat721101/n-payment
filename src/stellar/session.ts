@@ -2,6 +2,7 @@ import type { ChainKey } from '../types.js';
 import type { StellarSigner } from './signer.js';
 import { CHAINS } from '../chains.js';
 import { NPaymentError } from '../errors.js';
+import type { StellarAssetSymbol } from './assets.js';
 
 /**
  * MPP Session — thin reimplementation of the off-chain payment-channel flow.
@@ -12,8 +13,39 @@ import { NPaymentError } from '../errors.js';
  *
  * No per-payment on-chain transaction. Ideal for high-frequency AI agent micropayments.
  *
+ * v0.21 — optional asset binding. When `asset` is provided on both client and server,
+ * the commitment preimage incorporates a 12-byte asset code, making vouchers replay-safe
+ * across asset boundaries. When `asset` is undefined on both sides, falls back to the
+ * v0.20 preimage byte-shape (back-compat — no Soroban contract redeployment required).
+ *
  * Reference: https://developers.stellar.org/docs/build/agentic-payments/mpp/channel-guide
  */
+
+/**
+ * DRY helper — single source of the preimage byte layout used by both client and server.
+ * v0.20 layout (asset undefined): channel ++ amount(16 BE).
+ * v0.21 layout (asset defined):   channel ++ asset(12, zero-padded) ++ amount(16 BE).
+ */
+function computeCommitmentPreimageBytes(
+  channel: string,
+  cumulativeAmount: bigint,
+  asset?: StellarAssetSymbol,
+): Uint8Array {
+  const channelBytes = Buffer.from(channel, 'utf8');
+  const amountBytes = Buffer.alloc(16);
+  let amount = cumulativeAmount;
+  for (let i = 15; i >= 0; i--) {
+    amountBytes[i] = Number(amount & 0xffn);
+    amount >>= 8n;
+  }
+  if (!asset) {
+    // v0.20 back-compat path.
+    return new Uint8Array(Buffer.concat([channelBytes, amountBytes]));
+  }
+  const assetBytes = Buffer.alloc(12);
+  Buffer.from(asset, 'utf8').copy(assetBytes);
+  return new Uint8Array(Buffer.concat([channelBytes, assetBytes, amountBytes]));
+}
 
 // ─── Client ──────────────────────────────────────────────────────────────────
 
@@ -26,6 +58,13 @@ export interface StellarSessionClientConfig {
   chainKey: ChainKey;
   /** Override Soroban RPC. Default: chain.rpcUrl. */
   rpcUrl?: string;
+  /**
+   * v0.21 — declare which Stellar brand stable this channel holds (USDC, EURC, MGUSD).
+   * When set, the commitment preimage incorporates the asset code, making vouchers
+   * replay-safe across asset boundaries. Defaults to undefined for v0.20 back-compat.
+   * Server must use the same `asset` value or all signatures will fail to verify.
+   */
+  asset?: StellarAssetSymbol;
 }
 
 export interface VoucherCredential {
@@ -85,15 +124,7 @@ export class StellarSessionClient {
   }
 
   private computeCommitmentPreimage(cumulativeAmount: bigint): Uint8Array {
-    // Channel id (32 ascii bytes after "C" prefix) + amount big-endian 16 bytes.
-    const channelBytes = Buffer.from(this.config.channel, 'utf8');
-    const amountBytes = Buffer.alloc(16);
-    let amount = cumulativeAmount;
-    for (let i = 15; i >= 0; i--) {
-      amountBytes[i] = Number(amount & 0xffn);
-      amount >>= 8n;
-    }
-    return new Uint8Array(Buffer.concat([channelBytes, amountBytes]));
+    return computeCommitmentPreimageBytes(this.config.channel, cumulativeAmount, this.config.asset);
   }
 
   private async loadSdk() {
@@ -124,6 +155,12 @@ export interface StellarSessionServerConfig {
   closeSigner: StellarSigner;
   /** Override Soroban RPC. */
   rpcUrl?: string;
+  /**
+   * v0.21 — declare expected Stellar brand stable for this channel. Must match the client's
+   * `asset` field; mismatch causes all `verifyVoucher` calls to fail (replay-safe across
+   * asset boundaries). Undefined on both sides preserves v0.20 byte shape.
+   */
+  asset?: StellarAssetSymbol;
 }
 
 export class StellarSessionServer {
@@ -216,14 +253,7 @@ export class StellarSessionServer {
   }
 
   private computeCommitmentPreimage(cumulativeAmount: bigint): Uint8Array {
-    const channelBytes = Buffer.from(this.config.channel, 'utf8');
-    const amountBytes = Buffer.alloc(16);
-    let amount = cumulativeAmount;
-    for (let i = 15; i >= 0; i--) {
-      amountBytes[i] = Number(amount & 0xffn);
-      amount >>= 8n;
-    }
-    return new Uint8Array(Buffer.concat([channelBytes, amountBytes]));
+    return computeCommitmentPreimageBytes(this.config.channel, cumulativeAmount, this.config.asset);
   }
 
   private passphrase(): string {

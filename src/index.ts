@@ -76,6 +76,15 @@ export type { BazaarClientConfig } from './bazaar/index.js';
 
 // ─── Off-Ramp ────────────────────────────────────────────────────────────────
 export { OffRampClient, MockMoonPayAdapter } from './offramp/index.js';
+export {
+  StellarAnchorClient,
+  DefaultAnchorRegistry,
+  type AnchorDescriptor,
+  type AnchorRegistry,
+  type AnchorServiceUrls,
+  type OffRampInitiateInput,
+  type OffRampHandle,
+} from './offramp/index.js';
 
 // ─── Faucet ──────────────────────────────────────────────────────────────────
 export { TestnetFaucet } from './faucet.js';
@@ -103,6 +112,36 @@ export type {
   StellarSessionClientConfig, StellarSessionServerConfig, VoucherCredential,
 } from './stellar/session.js';
 export type { MppChargeMode } from './adapters/stellar-mpp.js';
+
+// ─── Stellar v0.21 — MGUSD + multi-stable + KYA ─────────────────────────────
+export {
+  STELLAR_ASSETS,
+  STELLAR_ASSET_SYMBOLS,
+  MGUSD_ISSUER_PLACEHOLDER,
+  getStellarAsset,
+  parseStellarAsset,
+  formatStellarAsset,
+  assertVerifiedIssuer,
+  type StellarAsset,
+  type StellarAssetSymbol,
+} from './stellar/assets.js';
+export {
+  selectAsset,
+  findStellarAmmPath,
+  CORRIDOR_PREFERENCE,
+  type Corridor,
+  type SelectAssetInput,
+  type SelectAssetResult,
+  type StellarAmmPath,
+} from './stellar/asset-router.js';
+export {
+  StellarKyaGate,
+  StellarKyaCredentialFetcher,
+  attachKyaIfRequired,
+  canonicalCredentialBytes,
+  type KyaCredential,
+  type KyaGateConfig,
+} from './stellar/kya.js';
 
 // ─── XRPL (Ripple) ──────────────────────────────────────────────────────────
 export { XrplClient, createXrplClient } from './xrpl/client.js';

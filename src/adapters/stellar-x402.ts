@@ -3,6 +3,7 @@ import type { StellarSigner } from '../stellar/signer.js';
 import type { StellarChannelsClient } from '../stellar/channels-client.js';
 import { CHAINS } from '../chains.js';
 import { ChallengeParseError, NPaymentError } from '../errors.js';
+import { attachKyaIfRequired, type StellarKyaCredentialFetcher } from '../stellar/kya.js';
 
 /**
  * Stellar x402 adapter — wraps @x402/stellar's ExactStellarScheme.
@@ -11,7 +12,8 @@ import { ChallengeParseError, NPaymentError } from '../errors.js';
  *   1. Parse 402 → x402 v2 challenge
  *   2. (Optional) facilitator.verify() when apiKey present
  *   3. Build signed payment payload via @x402/stellar
- *   4. Retry with x-payment-signature + x-payment-network + x-payment-reference-key
+ *   4. (v0.21) Attach x-kya-credential when challenge declares kya_required
+ *   5. Retry with x-payment-signature + x-payment-network + x-payment-reference-key
  *
  * Routing: chain-config-driven (detect inspects `accepts[0].network`).
  */
@@ -23,6 +25,8 @@ export class StellarX402Adapter implements PaymentAdapter {
     private readonly chainKey: ChainKey,
     private readonly channelsClient?: StellarChannelsClient,
     private readonly rpcUrl?: string,
+    /** v0.21 — optional KYA fetcher for endpoints with `kya_required:true` in challenge `extra`. */
+    private readonly kyaFetcher?: StellarKyaCredentialFetcher,
   ) {}
 
   detect(response: Response): boolean {
@@ -71,6 +75,8 @@ export class StellarX402Adapter implements PaymentAdapter {
     retryHeaders.set('x-payment-network', requirements.network);
     retryHeaders.set('x-payment-from', this.signer.address);
     if (ctx?.referenceKey) retryHeaders.set('x-payment-reference-key', ctx.referenceKey);
+    // v0.21 — KYA pass-through. No-op when challenge has no `kya_required` flag.
+    await attachKyaIfRequired(retryHeaders, requirements.extra, this.kyaFetcher, this.signer.address);
     return fetch(url, { ...init, headers: retryHeaders });
   }
 

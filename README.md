@@ -75,6 +75,73 @@ SR_INTEGRATION=1 CREDITCOIN_PRIVATE_KEY=0x... pnpm test tests/spacerouter.test.t
 
 ## Other protocols
 
+### Stellar (v0.21) — multi-stable: MGUSD + USDC + EURC
+
+n-payment v0.21 ships first-class support for the Stellar brand stablecoin set — including **MoneyGram MGUSD**, the first global retail-cash payment company's native stablecoin (launched 2026-06-02). Sub-cent micropayments via Soroban one-way payment channels with asset-aware preimages; multi-stable corridor routing; SEP-10/24 anchor off-ramp.
+
+```typescript
+import {
+  StellarSessionClient,
+  parseStellarAsset,
+  StellarAnchorClient,
+  selectAsset,
+} from 'n-payment';
+
+// 1. Pay sub-cent in MGUSD via Stellar Session
+const client = new StellarSessionClient({
+  channel: process.env.STELLAR_MGUSD_CHANNEL!,
+  asset: 'MGUSD',                                       // v0.21 — asset-aware preimage
+  commitmentSecretHex: process.env.STELLAR_COMMITMENT_SECRET!,
+  chainKey: 'stellar-testnet',
+});
+const voucher = await client.signCommitment(parseStellarAsset('0.001', 'MGUSD'));
+// Attach as Authorization: Payment <voucher.credential>
+
+// 2. Multi-stable router — pick the optimal asset for the corridor
+const decision = selectAsset({
+  requested: 'MGUSD',
+  buyerHoldings: ['USDC'],
+  corridor: 'us-mx',
+  allowAutoConvert: true,
+});
+// → { kind: 'auto-convert', from: 'USDC', to: 'MGUSD', via: 'stellar-amm', estimatedSlippageBps: 30 }
+
+// 3. Off-ramp at any of MoneyGram's 500K retail locations
+const offramp = new StellarAnchorClient();
+const handle = await offramp.cashOut('10.00', 'MGUSD', 'USD', signer, 'US');
+console.log(`Open ${handle.moreInfoUrl} to complete cash-out at MoneyGram retail.`);
+```
+
+**Three artifacts that close the loop:**
+
+```bash
+# Run the SCF #44 hero benchmark — 1000 MGUSD micropayments, single Stellar tx.
+pnpm tsx examples/stellar-mgusd-1000-calls.ts
+
+# Run the agent-earns-MGUSD → MoneyGram-retail-cash off-ramp demo.
+pnpm tsx examples/stellar-mgusd-offramp-demo.ts
+
+# Agent skill (matches sibling pay-*.sh JSON contract).
+bash skills/pay-stellar-mgusd.sh --help
+```
+
+**KYA-gated paid endpoints** — require a verified Know-Your-Agent tier before serving paid responses. Compose with M0's compliance hooks:
+
+```typescript
+import express from 'express';
+import { StellarKyaGate } from 'n-payment';
+
+const gate = new StellarKyaGate({ minKyaTier: 2 });
+const app = express();
+app.get('/skill', gate.middleware(), (req, res) => {
+  res.json({ data: 'gated by KYA tier 2' });
+});
+```
+
+See [`docs/PRD-v021-master-stellar-mgusd.md`](./docs/PRD-v021-master-stellar-mgusd.md) for the full v0.21 architecture, the 7-gap research substrate, and the SCF #44 narrative.
+
+---
+
 n-payment v0.19 unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), [Aave](https://aave.com), [Flare FXRP + x402 + Gasless](https://flare.network), and [Morph](https://morphl2.io) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
 
 Unifies [x402](https://x402.org), [MPP](https://mpp.dev), [GOAT x402](https://docs.goat.network), [Stellar](https://stellar.org), [XRPL](https://xrpl.org), [Circle Nanopayments](https://developers.circle.com/gateway/nanopayments), [AP2](https://ap2-protocol.org), and [Aave](https://aave.com) behind a single `fetchWithPayment()` call — with policy-gated spending, batch settlement, yield-bearing treasury, and full audit trail.
