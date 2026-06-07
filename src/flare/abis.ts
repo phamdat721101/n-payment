@@ -59,6 +59,74 @@ export const assetManagerAbi = [
     inputs: [],
     outputs: [{ name: '', type: 'uint256' }],
   },
+  // ─── v0.22.1 — FAssets redemption (FXRP → XRP on XRPL) ─────────────────
+  {
+    type: 'function',
+    name: 'redeem',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'lots', type: 'uint256' },
+      { name: 'redeemerUnderlyingAddressString', type: 'string' },
+      { name: 'executor', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'getRedemptionFeeBIPS',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'getRedemptionMinimumFeeUBA',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'getRedemptionExecutorFeeUBA',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'lotSize',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'event',
+    name: 'RedemptionRequested',
+    inputs: [
+      { name: 'redeemer', type: 'address', indexed: true },
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'paymentAmountUBA', type: 'uint256', indexed: false },
+      { name: 'paymentAddress', type: 'string', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'RedemptionPerformed',
+    inputs: [
+      { name: 'redeemer', type: 'address', indexed: true },
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'transactionHash', type: 'bytes32', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'RedemptionPaymentFailed',
+    inputs: [
+      { name: 'redeemer', type: 'address', indexed: true },
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'failureReason', type: 'string', indexed: false },
+    ],
+  },
 ] as const;
 
 export const masterAccountControllerAbi = [

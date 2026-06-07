@@ -232,3 +232,166 @@ async function verifyX402Payment(
     return false;
   }
 }
+
+// ─── v0.22 — RLUSD self-verification (PRD-D Primitive A & B) ────────────────
+
+/** ERC-20 Transfer event topic0: keccak256('Transfer(address,address,uint256)'). */
+const ERC20_TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const ZERO_ADDRESS_TOPIC =
+  '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+/** Idempotency: in-memory cache of consumed tx hashes. Replace with Redis / SQLite for prod. */
+const idempotencyCache = new Set<string>();
+
+/** Decode an indexed-address topic to a lowercased 0x... string. */
+function decodeAddressTopic(topic: string): string {
+  return ('0x' + topic.slice(-40)).toLowerCase();
+}
+
+/**
+ * Decode the X-PAYMENT base64 envelope into a strictly-typed payload.
+ * Returns null if shape is invalid — callers respond with 402.
+ */
+export function decodeRlusdExactPayment(headerVal: string): {
+  scheme: 'exact';
+  network: string;
+  txHash: string;
+  from: string;
+  to: string;
+  value: string;
+  asset: string;
+} | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(headerVal, 'base64').toString());
+    if (decoded.scheme !== 'exact' || typeof decoded.txHash !== 'string') return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Self-verify a `scheme: 'exact'` RLUSD payment via on-chain Transfer log.
+ * No facilitator dependency. Caller passes a viem-shape PublicClient that
+ * supports getTransactionReceipt + getBlockNumber.
+ *
+ * SOLID — DIP: depends on a minimal viem-style interface, not the concrete
+ * viem package, so callers can inject ethers/etherjs/web3.js shims.
+ */
+export interface RlusdRpcClient {
+  getTransactionReceipt(args: { hash: `0x${string}` }): Promise<{
+    status: 'success' | 'reverted' | number;
+    blockNumber: bigint;
+    logs: Array<{ address: string; topics: readonly string[]; data: string }>;
+  } | null>;
+  getBlockNumber(): Promise<bigint>;
+}
+
+export interface VerifyRlusdExactInput {
+  headerVal: string;
+  expectedAsset: `0x${string}`;
+  expectedTo: `0x${string}`;
+  expectedMinValue: bigint;
+  rpc: RlusdRpcClient;
+  /** Max block age allowed for replay protection. Default 1000. */
+  maxBlockAge?: bigint;
+}
+
+export type VerifyRlusdResult =
+  | { ok: true; txHash: string }
+  | { ok: false; reason: string };
+
+export async function verifyExactRlusdPayment(
+  input: VerifyRlusdExactInput,
+): Promise<VerifyRlusdResult> {
+  const payload = decodeRlusdExactPayment(input.headerVal);
+  if (!payload) return { ok: false, reason: 'invalid-header' };
+
+  const txHash = payload.txHash as `0x${string}`;
+  if (idempotencyCache.has(txHash)) return { ok: false, reason: 'tx-already-consumed' };
+
+  const receipt = await input.rpc.getTransactionReceipt({ hash: txHash });
+  if (!receipt) return { ok: false, reason: 'tx-not-confirmed' };
+  const status = receipt.status;
+  const ok = status === 'success' || status === 1;
+  if (!ok) return { ok: false, reason: 'tx-reverted' };
+
+  // Recency: tx must be in last N blocks (replay window protection).
+  const tip = await input.rpc.getBlockNumber();
+  const ageLimit = input.maxBlockAge ?? 1000n;
+  if (tip - receipt.blockNumber > ageLimit) return { ok: false, reason: 'tx-too-old' };
+
+  // Match: ERC-20 Transfer(from=<any>, to=expectedTo, value≥expectedMinValue) on expectedAsset.
+  const transferLog = receipt.logs.find(
+    (l) =>
+      l.address.toLowerCase() === input.expectedAsset.toLowerCase() &&
+      l.topics[0] === ERC20_TRANSFER_TOPIC &&
+      l.topics.length === 3 &&
+      decodeAddressTopic(l.topics[2]!) === input.expectedTo.toLowerCase() &&
+      BigInt(l.data) >= input.expectedMinValue,
+  );
+  if (!transferLog) return { ok: false, reason: 'transfer-log-missing-or-mismatch' };
+
+  idempotencyCache.add(txHash);
+  return { ok: true, txHash };
+}
+
+/**
+ * Self-verify a `wormhole-ntt-transfer` payment by reading the dest-chain mint
+ * event (PRD-D Primitive B). The NTT redemption mint to the merchant IS the proof.
+ */
+export interface VerifyWormholeNttInput {
+  headerVal: string;
+  /** RLUSD ERC-20 on the destination chain. */
+  expectedAsset: `0x${string}`;
+  expectedTo: `0x${string}`;
+  expectedMinValue: bigint;
+  rpc: RlusdRpcClient;
+  maxBlockAge?: bigint;
+}
+
+export async function verifyWormholeNttPayment(
+  input: VerifyWormholeNttInput,
+): Promise<VerifyRlusdResult> {
+  let payload: { scheme: string; destTxHash?: string; destNetwork?: string };
+  try {
+    payload = JSON.parse(Buffer.from(input.headerVal, 'base64').toString());
+  } catch {
+    return { ok: false, reason: 'invalid-header' };
+  }
+  if (payload.scheme !== 'wormhole-ntt-transfer' || !payload.destTxHash) {
+    return { ok: false, reason: 'wrong-scheme-or-missing-dest-tx' };
+  }
+  const destTxHash = payload.destTxHash as `0x${string}`;
+  if (idempotencyCache.has(destTxHash)) return { ok: false, reason: 'tx-already-consumed' };
+
+  const receipt = await input.rpc.getTransactionReceipt({ hash: destTxHash });
+  if (!receipt) return { ok: false, reason: 'dest-tx-not-confirmed' };
+  const ok = receipt.status === 'success' || receipt.status === 1;
+  if (!ok) return { ok: false, reason: 'dest-tx-reverted' };
+
+  const tip = await input.rpc.getBlockNumber();
+  const ageLimit = input.maxBlockAge ?? 1000n;
+  if (tip - receipt.blockNumber > ageLimit) return { ok: false, reason: 'tx-too-old' };
+
+  // NTT redemption: ERC-20 Transfer(from=0x0, to=merchant, value≥expectedMinValue) — i.e. mint.
+  const mintLog = receipt.logs.find(
+    (l) =>
+      l.address.toLowerCase() === input.expectedAsset.toLowerCase() &&
+      l.topics[0] === ERC20_TRANSFER_TOPIC &&
+      l.topics.length === 3 &&
+      l.topics[1] === ZERO_ADDRESS_TOPIC &&
+      decodeAddressTopic(l.topics[2]!) === input.expectedTo.toLowerCase() &&
+      BigInt(l.data) >= input.expectedMinValue,
+  );
+  if (!mintLog) return { ok: false, reason: 'redemption-log-missing-or-mismatch' };
+
+  idempotencyCache.add(destTxHash);
+  return { ok: true, txHash: destTxHash };
+}
+
+/** Test-only utility — clears the in-memory idempotency cache between vitest runs. */
+export function _clearRlusdIdempotencyCache(): void {
+  idempotencyCache.clear();
+}

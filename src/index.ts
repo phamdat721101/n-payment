@@ -309,6 +309,8 @@ export {
   buildFlareX402Challenge, deployFlareX402Contracts, X402_FACILITATOR_ABI,
   FlareGaslessForwarderClient, createGaslessExecutor, deployFlareGaslessForwarder,
   PAYMENT_REQUEST_TYPES, FORWARDER_ABI,
+  // v0.22.1 — FAssets redemption (XRPFi reverse leg)
+  computeRedemptionQuote, getRedemptionFees, getLotSize,
 } from './flare/index.js';
 export type {
   FlareClientConfig, FlareContractName,
@@ -320,7 +322,57 @@ export type {
   ContractArtifact, DeployFlareX402Params, DeployFlareX402Result,
   FlareGaslessClientConfig, FlarePaymentRequest, FlareGaslessStatus,
   FlareGaslessExecuteResult, GaslessRelayerHandlerConfig, DeployFlareGaslessParams,
+  // v0.22.1 — FAssets redemption (XRPFi reverse leg)
+  RedemptionFees, RedemptionQuote,
+  FlareRedeemParams, FlareRedeemReceipt, FlareRedemptionStatus, PollRedemptionOptions,
 } from './flare/index.js';
 
 // ─── Flare merchant paywall deps (v0.19) ────────────────────────────────────
 export type { FlareMerchantDeps } from './middleware.js';
+
+// ─── Wormhole NTT (v0.22) ───────────────────────────────────────────────────
+export {
+  RLUSD_NTT_DEPLOYMENTS,
+  CHAIN_KEY_TO_WH,
+  whChainFromKey,
+  chainKeyFromWh,
+  canBridgeRlusd,
+  WormholeNttClient,
+  createDefaultWormholeNttBridgeFactory,
+} from './wormhole/index.js';
+export { WormholeNttAdapter } from './adapters/wormhole-ntt.js';
+export type {
+  WormholeChainName,
+  NttDeployment,
+  CanBridgeResult,
+  EvmSigner,
+  NttBridgeRequest,
+  NttBridgeResult,
+  NttTransferRequest,
+  NttTransferReceipt,
+  WormholeNttBridge,
+  WormholeNttBridgeFactory,
+  WormholeNttClientConfig,
+  WormholeNttAdapterOptions,
+} from './wormhole/index.js';
+export type { WormholeConfig } from './types.js';
+export type { XrpfiConfig } from './types.js';
+
+// ─── PayRouter v3 — RLUSD corridor (v0.22) ──────────────────────────────────
+export { selectRlusdCorridor } from './payrouter/index.js';
+export type { CorridorRouteInput, CorridorRouteDecision } from './payrouter/index.js';
+
+// ─── RLUSD facilitator-independent settlement (v0.22 PRD-D) ────────────────
+export { RlusdExactAdapter } from './adapters/rlusd-exact.js';
+export {
+  verifyExactRlusdPayment,
+  verifyWormholeNttPayment,
+  decodeRlusdExactPayment,
+  _clearRlusdIdempotencyCache,
+} from './middleware.js';
+export type {
+  RlusdRpcClient,
+  VerifyRlusdExactInput,
+  VerifyRlusdResult,
+  VerifyWormholeNttInput,
+} from './middleware.js';

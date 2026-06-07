@@ -215,3 +215,108 @@ export function toXrplMemoHex(bytes: Uint8Array): string {
   for (const b of bytes) out += b.toString(16).padStart(2, '0');
   return out.toUpperCase();
 }
+
+
+// ─── v0.22.1 — FAssets redemption (FXRP → XRP) ───────────────────────────────
+
+export interface RedemptionFees {
+  /** Proportional fee in BIPS (1/10_000). */
+  feeBips: bigint;
+  /** Minimum redemption fee floor (UBA). */
+  minFeeUBA: bigint;
+  /** Flat executor fee (UBA). */
+  executorFeeUBA: bigint;
+}
+
+export interface RedemptionQuote {
+  /** Net XRP delivered to the XRPL destination, after redemption fee + executor fee. */
+  netReceiveUBA: bigint;
+  proportionalFeeUBA: bigint;
+  redemptionFeeUBA: bigint;
+  executorFeeUBA: bigint;
+  /** Gross FXRP burned. Must equal the input amountFxrp converted to UBA. */
+  burnedFxrpUBA: bigint;
+  /** XRP the recipient receives, decimal string. */
+  receivedXrp: string;
+}
+
+/**
+ * Pure-fn redemption quote. Mirrors {@link computeDirectMintingQuote} but the fee
+ * is *deducted* from the burned amount instead of *added* to the gross payment.
+ *
+ * @example
+ *   computeRedemptionQuote('10', { feeBips: 25n, minFeeUBA: 100_000n, executorFeeUBA: 200_000n })
+ *   → { burnedFxrpUBA: 10_000_000n, redemptionFeeUBA: 100_000n,
+ *       executorFeeUBA: 200_000n, netReceiveUBA: 9_700_000n, receivedXrp: '9.7' }
+ */
+export function computeRedemptionQuote(
+  amountFxrp: string,
+  fees: RedemptionFees,
+): RedemptionQuote {
+  const burnedFxrpUBA = parseXrpDropsAmount(amountFxrp);
+  const proportionalFeeUBA = (burnedFxrpUBA * fees.feeBips) / BIPS_DENOMINATOR;
+  const redemptionFeeUBA =
+    proportionalFeeUBA > fees.minFeeUBA ? proportionalFeeUBA : fees.minFeeUBA;
+  const totalFeeUBA = redemptionFeeUBA + fees.executorFeeUBA;
+  if (totalFeeUBA >= burnedFxrpUBA) {
+    throw new NPaymentError(
+      `Redemption fees (${totalFeeUBA}) exceed the redemption amount (${burnedFxrpUBA})`,
+      'FLARE_REDEMPTION_FEES_EXCEED_AMOUNT',
+      'Redeem a larger FXRP amount, or wait for the executor fee to drop.',
+    );
+  }
+  const netReceiveUBA = burnedFxrpUBA - totalFeeUBA;
+  return {
+    netReceiveUBA,
+    proportionalFeeUBA,
+    redemptionFeeUBA,
+    executorFeeUBA: fees.executorFeeUBA,
+    burnedFxrpUBA,
+    receivedXrp: formatXrpDropsAmount(netReceiveUBA),
+  };
+}
+
+/** Read live redemption fee parameters from AssetManagerFXRP, in parallel. */
+export async function getRedemptionFees(client: FlareClient): Promise<RedemptionFees> {
+  const assetManager = await client.registry.address('AssetManagerFXRP');
+  try {
+    const [feeBips, minFeeUBA, executorFeeUBA] = await Promise.all([
+      client.publicClient.readContract({
+        address: assetManager,
+        abi: assetManagerAbi,
+        functionName: 'getRedemptionFeeBIPS',
+      }),
+      client.publicClient.readContract({
+        address: assetManager,
+        abi: assetManagerAbi,
+        functionName: 'getRedemptionMinimumFeeUBA',
+      }),
+      client.publicClient.readContract({
+        address: assetManager,
+        abi: assetManagerAbi,
+        functionName: 'getRedemptionExecutorFeeUBA',
+      }),
+    ]);
+    return {
+      feeBips: feeBips as bigint,
+      minFeeUBA: minFeeUBA as bigint,
+      executorFeeUBA: executorFeeUBA as bigint,
+    };
+  } catch (err) {
+    throw new NPaymentError(
+      `Failed to read redemption fees: ${(err as Error).message}`,
+      'FLARE_REDEMPTION_FEE_READ_FAILED',
+      'Verify the Flare RPC is reachable and AssetManagerFXRP exposes the v0.22.1 redemption surface.',
+    );
+  }
+}
+
+/** Read the protocol's lot-size in UBA (smallest redeemable unit). */
+export async function getLotSize(client: FlareClient): Promise<bigint> {
+  const assetManager = await client.registry.address('AssetManagerFXRP');
+  return (await client.publicClient.readContract({
+    address: assetManager,
+    abi: assetManagerAbi,
+    functionName: 'lotSize',
+  })) as bigint;
+}

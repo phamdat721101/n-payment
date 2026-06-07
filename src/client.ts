@@ -34,6 +34,8 @@ import { SpaceRouterClient } from './spacerouter/client.js';
 import { OWSSpaceRouterSigner, KeypairSpaceRouterSigner } from './spacerouter/signer.js';
 import { AaveTreasuryManager } from './aave/index.js';
 import { AaveGhoAdapter } from './adapters/aave-gho.js';
+import { WormholeNttClient } from './wormhole/ntt-client.js';
+import { WormholeNttAdapter } from './adapters/wormhole-ntt.js';
 import type { Hex, Address } from 'viem';
 
 const SPACE_ROUTER_DEFAULTS = {
@@ -58,6 +60,10 @@ export class PaymentClient {
   readonly aave?: AaveTreasuryManager;
   /** v0.14: XRPL XLS-65 vault treasury (yield-parity). Constructed when xrpl.treasury.autoYield is set. */
   readonly xrplTreasury?: XrplTreasuryManager;
+  /** v0.22: Wormhole NTT client (soft-disabled when no signers configured). */
+  wormholeClient?: WormholeNttClient;
+  /** v0.22: Wormhole NTT adapter. Invoked by PayRouter v3 corridor (PRD-C). */
+  wormholeAdapter?: WormholeNttAdapter;
 
   constructor(config: NPaymentConfig) {
     this.config = createConfig(config);
@@ -308,6 +314,28 @@ export class PaymentClient {
           'Run examples/flare-payments-demo.ts deploy mode to provision the contracts.',
         );
       }
+    }
+
+    // ── v0.22: Wormhole NTT (cross-chain RLUSD) — soft-disable when no signers ──
+    if (config.wormhole?.signers && Object.keys(config.wormhole.signers).length > 0) {
+      this.wormholeClient = new WormholeNttClient({
+        network: config.wormhole.network ?? 'Mainnet',
+        signers: config.wormhole.signers,
+        bridgeFactory: config.wormhole.bridgeFactory,
+        attestationPollMs: config.wormhole.attestationPollMs,
+        attestationTimeoutMs: config.wormhole.attestationTimeoutMs,
+        strict: config.wormhole.strict,
+      });
+      this.wormholeAdapter = new WormholeNttAdapter(this.wormholeClient, {
+        maxPerTransfer: config.wormhole.maxPerTransfer,
+        maxPerDay: config.wormhole.maxPerDay,
+      });
+    } else if (config.wormhole?.strict) {
+      throw new AdapterNotFoundError(
+        'Wormhole NTT configured with strict mode but no signers provided',
+        'WORMHOLE_NTT_NO_SIGNER',
+        'Pass wormhole: { signers: { Optimism: ethersWallet, Base: ethersWallet, ... } }.',
+      );
     }
   }
 

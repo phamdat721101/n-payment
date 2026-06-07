@@ -29,6 +29,10 @@ export {
   getDirectMintingFees,
   getDirectMintingPaymentAddress,
   preflightDirectMintingLimits,
+  // v0.22.1 — redemption
+  computeRedemptionQuote,
+  getRedemptionFees,
+  getLotSize,
   XRP_SCALE,
   DIRECT_MINTING_MEMO_PREFIX,
 } from './direct-minting.js';
@@ -36,6 +40,9 @@ export type {
   DirectMintingFees,
   DirectMintingQuote,
   DirectMintingPreflight,
+  // v0.22.1 — redemption
+  RedemptionFees,
+  RedemptionQuote,
 } from './direct-minting.js';
 
 export {
@@ -46,6 +53,11 @@ export type {
   FlareBridgeConfig,
   FlareMintParams,
   FlareMintReceipt,
+  // v0.22.1 — redemption
+  FlareRedeemParams,
+  FlareRedeemReceipt,
+  FlareRedemptionStatus,
+  PollRedemptionOptions,
 } from './bridge.js';
 
 // ─── v0.19: x402 (MockUSDT0) — buyer adapter + merchant settle + deploy helper ─

@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'wormhole-ntt' | 'rlusd-exact' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -24,7 +24,12 @@ export type ChainKey =
   | 'creditcoin-testnet'
   | 'flare-coston2-testnet'
   | 'flare-songbird-mainnet'
-  | 'flare-mainnet';
+  | 'flare-mainnet'
+  // v0.22 — RLUSD multichain via Wormhole NTT
+  | 'ethereum-mainnet'
+  | 'optimism-mainnet'
+  | 'ink-mainnet'
+  | 'unichain-mainnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -332,6 +337,55 @@ export interface AaveConfig {
   delegation?: { enabled?: boolean; delegates?: string[]; maxPerDelegate?: bigint };
 }
 
+// ─── Wormhole NTT (v0.22) ────────────────────────────────────────────────────
+
+import type {
+  EvmSigner,
+  WormholeChainName,
+  WormholeNttBridgeFactory,
+} from './wormhole/types.js';
+
+/**
+ * v0.22: Wormhole NTT cross-chain RLUSD config. All fields optional — if
+ * `signers` is missing the SDK soft-disables the cross-chain RLUSD lane and
+ * the corridor (PRD-C) skips ntt-bridge decisions.
+ */
+export interface WormholeConfig {
+  /** Per-chain EVM signer (ethers.Wallet, viem.WalletClient, or OWS adapter). */
+  signers?: Partial<Record<WormholeChainName, EvmSigner>>;
+  /** Override default bridge factory (advanced; default wraps @wormhole-foundation/sdk-evm-ntt). */
+  bridgeFactory?: WormholeNttBridgeFactory;
+  /** Wormhole network env. Default 'Mainnet'. */
+  network?: 'Mainnet' | 'Testnet';
+  /** Per-call max RLUSD bridge amount (UBA — 18 decimals). */
+  maxPerTransfer?: bigint;
+  /** Rolling 24h cap (UBA). */
+  maxPerDay?: bigint;
+  /** VAA polling timeout (ms). Default 600_000. */
+  attestationTimeoutMs?: number;
+  /** VAA polling interval (ms). Default 5_000. */
+  attestationPollMs?: number;
+  /** Throw on missing signer instead of skipping. Default false. */
+  strict?: boolean;
+}
+
+/**
+ * v0.22.1: XRPFi unified corridor config (PRD-G). Composes existing FlareConfig
+ * (FXRP minting/redemption) + XrplConfig (RLUSD-XRPL swap) + WormholeConfig
+ * (optional reverse-bridge). All fields optional — if absent the corridor
+ * never emits XRPFi decisions.
+ */
+export interface XrpfiConfig {
+  /** Master switch — when true, PayRouter emits xrpfi-* decisions. Default false. */
+  enabled?: boolean;
+  /** Redemption poll timeout (ms). Default 600_000 (10 min). */
+  redemptionTimeoutMs?: number;
+  /** XRPL XRP→RLUSD swap slippage cap (bps). Default 100 (1%). */
+  swapMaxSlippageBps?: number;
+  /** Allow the future XRPL → EVM bridge step. Default false; activates when XRPL is added to RLUSD_NTT_DEPLOYMENTS. */
+  allowReverseBridge?: boolean;
+}
+
 export interface NPaymentConfig {
   chains: ChainKey[];
   ows: OWSConfig;
@@ -362,6 +416,10 @@ export interface NPaymentConfig {
   aave?: AaveConfig;
   // v0.15: Flare FXRP direct-minting bridge
   flare?: FlareConfig;
+  // v0.22: Wormhole NTT cross-chain RLUSD
+  wormhole?: WormholeConfig;
+  // v0.22.1: Unified XRPFi corridor (XRP ↔ FXRP ↔ RLUSD round-trip)
+  xrpfi?: XrpfiConfig;
 }
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────
@@ -427,7 +485,16 @@ export interface AnalyticsPlugin {
 export interface PaywallRouteConfig {
   price: string;
   description?: string;
-  x402?: { payTo: string; asset?: string; network?: string; facilitator?: string };
+  x402?: {
+    payTo: string;
+    /** Asset symbol or ERC-20 address. Default 'USDC'. */
+    asset?: string;
+    network?: string;
+    /** Optional facilitator URL. When omitted, merchants self-verify on-chain (v0.22 PRD-D). */
+    facilitator?: string;
+    /** v0.22: payment scheme. 'exact' = on-chain transfer + log proof. 'wormhole-ntt-transfer' = bridge-as-payment. Default 'exact'. */
+    scheme?: 'exact' | 'wormhole-ntt-transfer';
+  };
   mpp?: { currency?: string; recipient?: string };
   xrpl?: { payTo: string; asset?: string; network?: string };
   /**

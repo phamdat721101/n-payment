@@ -71,8 +71,12 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     caip2: 'eip155:8453',
     name: 'Base',
     rpcUrl: 'https://mainnet.base.org',
-    protocols: ['x402'],
-    tokens: { USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
+    protocols: ['x402', 'wormhole-ntt', 'rlusd-exact'],
+    tokens: {
+      USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      // v0.22 — RLUSD on Base via Wormhole NTT (burn-and-mint, threshold=1).
+      RLUSD: '0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258',
+    },
     facilitator: 'https://api.cdp.coinbase.com/platform/v2/x402',
   },
   'bnb-mainnet': {
@@ -242,6 +246,54 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     tokens: {
       FXRP: '0x0000000000000000000000000000000000000000',
       MockUSDT0: '0x0000000000000000000000000000000000000000',
+    },
+  },
+  // ── v0.22 — RLUSD multichain via Wormhole NTT ────────────────────────────
+  // All 5 EVM chains share the same NttManager (0x2a71afb1...) and Transceiver
+  // (0x7B17Afd3...) per Wormhole CREATE2 deterministic addressing. Source:
+  // github.com/wormhole-foundation/connect-w/blob/62f8216/src/deployments/RLUSD.json
+  'ethereum-mainnet': {
+    chainId: 1,
+    caip2: 'eip155:1',
+    name: 'Ethereum',
+    rpcUrl: 'https://eth.llamarpc.com',
+    protocols: ['x402', 'wormhole-ntt', 'rlusd-exact'],
+    tokens: {
+      USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      RLUSD: '0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD',
+    },
+  },
+  'optimism-mainnet': {
+    chainId: 10,
+    caip2: 'eip155:10',
+    name: 'Optimism',
+    rpcUrl: 'https://mainnet.optimism.io',
+    protocols: ['x402', 'wormhole-ntt', 'rlusd-exact'],
+    tokens: {
+      USDC: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+      RLUSD: '0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258',
+    },
+  },
+  'ink-mainnet': {
+    chainId: 57073,
+    caip2: 'eip155:57073',
+    name: 'Ink',
+    rpcUrl: 'https://rpc-gel.inkonchain.com',
+    protocols: ['x402', 'wormhole-ntt', 'rlusd-exact'],
+    tokens: {
+      USDC: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
+      RLUSD: '0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258',
+    },
+  },
+  'unichain-mainnet': {
+    chainId: 130,
+    caip2: 'eip155:130',
+    name: 'Unichain',
+    rpcUrl: 'https://mainnet.unichain.org',
+    protocols: ['x402', 'wormhole-ntt', 'rlusd-exact'],
+    tokens: {
+      USDC: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
+      RLUSD: '0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258',
     },
   },
 };

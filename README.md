@@ -4,6 +4,109 @@
 
 One npm install, one wallet, two prompts. Your agent gets unblocked from datacenter-IP-hostile sites (Cloudflare 1010/1020), pays per-byte in $SPACE on Creditcoin (chainId `102030`), and ships an on-chain audit trail with a 5-day-timelock-protected escrow. Nothing to deploy.
 
+> **v0.22 highlights** — RLUSD on 6 chains in one `fetchWithPayment` call: XRPL native + Ethereum + Base + Optimism + Ink + Unichain via Wormhole NTT 1.1.0. Facilitator-independent on-chain settlement (no Coinbase CDP dependency for any RLUSD chain). New `selectRlusdCorridor` pure-fn cross-chain router; `WormholeNttClient` + `WormholeNttAdapter` with per-tx + per-day caps; `RlusdExactAdapter` + on-chain `verifyExactRlusdPayment` / `verifyWormholeNttPayment` middleware helpers. **Backward compatible** — strict superset of v0.21.
+
+## RLUSD on six chains, one `fetchWithPayment` (v0.22)
+
+n-payment is the only agentic-payment SDK that natively speaks **Ripple USD (RLUSD)** on every chain where it's been issued. NYDFS-regulated, $1.72B market cap (8th-largest stable globally).
+
+| Chain | RLUSD address | Rail |
+|---|---|---|
+| XRPL Mainnet | `rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De` (issuer) | XRPL native — `XrplAdapter` |
+| Ethereum | `0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD` | x402 + Wormhole NTT |
+| Base | `0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258` | x402 + Wormhole NTT |
+| Optimism | `0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258` | x402 + Wormhole NTT |
+| Ink | `0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258` | x402 + Wormhole NTT |
+| Unichain | `0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258` | x402 + Wormhole NTT |
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+import { ethers } from 'ethers'; // optional peer dep — only if you bridge
+
+const client = createPaymentClient({
+  chains: ['xrpl-mainnet', 'base-mainnet', 'optimism-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.OWS_KEY as `0x${string}` },
+  wormhole: {
+    signers: {
+      Optimism: new ethers.Wallet(process.env.OPTIMISM_KEY!,
+        new ethers.JsonRpcProvider(process.env.OPTIMISM_RPC)),
+      Base: new ethers.Wallet(process.env.BASE_KEY!,
+        new ethers.JsonRpcProvider(process.env.BASE_RPC)),
+    },
+    maxPerTransfer: 100n  * 10n ** 18n,
+    maxPerDay:      1000n * 10n ** 18n,
+  },
+});
+
+// Pay 1.5 RLUSD to a paid-MCP on Base — even if you only hold RLUSD on Optimism.
+// PayRouter v3 corridor auto-bridges via Wormhole NTT (~30s VAA + 5s redeem + 5s settle).
+await client.fetchWithPayment('https://api.example.com/llm');
+```
+
+**Three primitives ship together:**
+
+```bash
+# Full corridor demo (XRPL + 5 EVM chains)
+pnpm tsx examples/rlusd-multichain-demo.ts
+
+# Bridge-only smoke (used as $0.10 mainnet pre-publish gate)
+pnpm tsx examples/rlusd-ntt-bridge-only.ts --from optimism --to base --amount 0.10
+
+# Agent skill matching the existing pay-*.sh JSON contract
+bash skills/pay-rlusd-multichain.sh https://api.example.com/llm
+```
+
+**Facilitator-independent settlement** — `RlusdExactAdapter` broadcasts a real on-chain `RLUSD.transfer()`; the merchant verifies via on-chain Transfer log with no facilitator dependency. Coinbase CDP doesn't cover Ethereum/Optimism/Ink/Unichain (and never RLUSD); we sidestep that entirely. See `docs/PRD-rlusd-x402-facilitator-adapter.md` for the two settlement primitives (Primitive A — `exact`; Primitive B — `wormhole-ntt-transfer` bridge-as-payment).
+
+See [`docs/PRD-v022-master-rlusd-wormhole-ntt.md`](./docs/PRD-v022-master-rlusd-wormhole-ntt.md) for the full architecture, all 6 sub-PRDs, and the GTM plan.
+
+## Unified XRPFi corridor — XRP ↔ FXRP ↔ RLUSD round-trip (v0.22.1)
+
+Closes the loop back to XRPL through Flare's FAssets. With v0.22.1 the SDK rounds-trips XRP across **3 ecosystems** (XRPL native, Flare FAssets, EVM RLUSD via Wormhole NTT) in one `fetchWithPayment(url)` call.
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['xrpl-mainnet', 'flare-mainnet', 'base-mainnet', 'optimism-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.OWS_KEY as `0x${string}` },
+  xrpl: { seed: process.env.XRPL_SEED, autoSwap: true },
+  flare: { network: 'flare-mainnet' },
+  xrpfi: { enabled: true, redemptionTimeoutMs: 600_000, swapMaxSlippageBps: 100 },
+});
+
+// Reverse leg: agent holds FXRP on Flare; merchant wants RLUSD on XRPL.
+// SDK redeems FXRP → XRP → swaps to RLUSD-XRPL automatically. Total ~3-8 min.
+await client.fetchWithPayment('https://api.example.com/xrpl-paid-mcp');
+```
+
+**Decision tree** the corridor walks under the hood:
+
+| Holdings | Merchant wants | Path | Latency |
+|---|---|---|---|
+| RLUSD on Base | RLUSD on Base | `direct` | 5–15s |
+| RLUSD on Optimism | RLUSD on Base | `ntt-bridge` (PRD-B) | 75–90s |
+| **FXRP on Flare** | **RLUSD on XRPL** | **`xrpfi-redeem-then-swap`** | **3–8 min** |
+| **FXRP on Flare** | **RLUSD on Base/Op/Ink/Uni** | **`xrpfi-redeem-swap-then-bridge`** (pre-wired, activates when Wormhole adds XRPL) | future |
+| **XRP on XRPL only** | **RLUSD on EVM** | **`xrpfi-mint-fxrp`** (forward partial — stops at FXRP) | 30–90s |
+
+**Try it:**
+
+```bash
+# Forward — XRP → FXRP (stops at Flare; v0.23 closes the loop)
+pnpm tsx examples/xrpfi-roundtrip-demo.ts --mode=forward
+
+# Reverse — FXRP → XRP → RLUSD on XRPL (full closure today)
+pnpm tsx examples/xrpfi-roundtrip-demo.ts --mode=reverse
+
+# Auto — corridor decides based on holdings
+pnpm tsx examples/xrpfi-roundtrip-demo.ts --mode=auto
+```
+
+Backward compatible — `xrpfi.enabled` defaults to false; v0.22.0 callers see identical behavior.
+
+---
+
 > **v0.20 highlights** — `parseSpace`/`formatSpace` 18-decimal helpers, zero-balance preflight, sharper gateway error hints (`SR_RATE_LIMITED` / `SR_NO_PROVIDERS` / `SR_PROVIDER_UNREACHABLE` all carry actionable hints), runnable `examples/spacerouter-quickstart.ts`, agent-skill `skills/pay-spacerouter.sh`, env-gated cc3-testnet integration suite. **Backward compatible** — non-SpaceRouter chains (Flare, Morph, GOAT, XRPL, Stellar, Aave, Solana, Base/x402) untouched.
 
 ```bash
