@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'wormhole-ntt' | 'rlusd-exact' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'wormhole-ntt' | 'rlusd-exact' | 'cosmos-msgsend' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -29,7 +29,10 @@ export type ChainKey =
   | 'ethereum-mainnet'
   | 'optimism-mainnet'
   | 'ink-mainnet'
-  | 'unichain-mainnet';
+  | 'unichain-mainnet'
+  // v0.23 — Cosmos-SDK / Initia (USDC-EVM → iUSD-Initia bridge corridor)
+  | 'initia-mainnet'
+  | 'initia-testnet';
 
 export interface ChainConfig {
   chainId: number;
@@ -420,6 +423,9 @@ export interface NPaymentConfig {
   wormhole?: WormholeConfig;
   // v0.22.1: Unified XRPFi corridor (XRP ↔ FXRP ↔ RLUSD round-trip)
   xrpfi?: XrpfiConfig;
+  // v0.23: Initia (Cosmos-SDK) + iUSD bridge corridor
+  initia?: import('./initia/types.js').InitiaConfig;
+  iusd?: import('./initia/types.js').IusdConfig;
 }
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────

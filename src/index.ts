@@ -362,6 +362,43 @@ export type { XrpfiConfig } from './types.js';
 export { selectRlusdCorridor } from './payrouter/index.js';
 export type { CorridorRouteInput, CorridorRouteDecision } from './payrouter/index.js';
 
+// ─── Initia × iUSD bridge corridor (v0.23) ──────────────────────────────────
+export {
+  INITIA_ASSETS,
+  getInitiaAsset,
+  assertVerifiedDenom,
+  parseInitiaAmount,
+  formatInitiaAmount,
+  InitiaClient,
+  mnemonicSigner,
+  selectIusdCorridor,
+  SkipApiClient,
+  LayerZeroAusdClient,
+  IusdBridgeOrchestrator,
+} from './initia/index.js';
+export type {
+  InitiaAsset,
+  InitiaAssetSymbol,
+  InitiaConfig,
+  InitiaNetwork,
+  InitiaChainKey,
+  IusdConfig,
+  IusdCorridor,
+  IusdCorridorStep,
+  IusdCorridorResult,
+  IusdCorridorInput,
+  SkipQuoteRequest,
+  SkipQuoteResponse,
+  InitiaClientConfig,
+  InitiaSigner,
+  BroadcastResult,
+  SkipApiClientConfig,
+  LayerZeroAusdClientConfig,
+  IusdBridgeOrchestratorConfig,
+} from './initia/index.js';
+export { InitiaIusdAdapter } from './adapters/initia-iusd.js';
+export type { InitiaIusdAdapterOptions } from './adapters/initia-iusd.js';
+
 // ─── RLUSD facilitator-independent settlement (v0.22 PRD-D) ────────────────
 export { RlusdExactAdapter } from './adapters/rlusd-exact.js';
 export {

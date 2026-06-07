@@ -105,8 +105,8 @@ describe('createConfig', () => {
 // ─── chains ──────────────────────────────────────────────────────────────────
 
 describe('chains', () => {
-  it('has all 26 chains', () => {
-    expect(Object.keys(CHAINS)).toHaveLength(26);
+  it('has all 28 chains', () => {
+    expect(Object.keys(CHAINS)).toHaveLength(28);
   });
 
   it('getChain returns correct config', () => {
@@ -125,6 +125,129 @@ describe('chains', () => {
   it('goat chains include BTC tokens', () => {
     expect(getChain('goat-testnet').tokens.WBTC).toBeDefined();
     expect(getChain('goat-testnet').tokens.PegBTC).toBeDefined();
+  });
+
+  // ── v0.23 — Initia (Cosmos-SDK) ────────────────────────────────────────────
+  it('initia chains registered with cosmos-msgsend protocol + correct caip2', () => {
+    expect(getChain('initia-mainnet').caip2).toBe('cosmos:interwoven-1');
+    expect(getChain('initia-testnet').caip2).toBe('cosmos:initiation-2');
+    expect(getChain('initia-mainnet').protocols).toContain('cosmos-msgsend');
+    expect(getChain('initia-testnet').protocols).toContain('cosmos-msgsend');
+    expect(getChain('initia-mainnet').tokens.INIT).toBe('uinit');
+  });
+});
+
+// ─── v0.23 — Initia asset registry ───────────────────────────────────────────
+
+describe('initia assets (v0.23)', () => {
+  it('getInitiaAsset normalizes case-insensitive symbols', async () => {
+    const { getInitiaAsset } = await import('../src/initia/assets.js');
+    expect(getInitiaAsset('initia-testnet', 'iusd').symbol).toBe('iUSD');
+    expect(getInitiaAsset('initia-testnet', 'IUSD').symbol).toBe('iUSD');
+    expect(getInitiaAsset('initia-testnet', 'iUSD').symbol).toBe('iUSD');
+    expect(getInitiaAsset('initia-mainnet', 'init').symbol).toBe('INIT');
+  });
+
+  it('INIT denom is verified=true (uinit), iUSD is placeholder until env override', async () => {
+    const { getInitiaAsset } = await import('../src/initia/assets.js');
+    expect(getInitiaAsset('initia-testnet', 'INIT').verified).toBe(true);
+    expect(getInitiaAsset('initia-testnet', 'INIT').denom).toBe('uinit');
+    // No env var → placeholder
+    delete process.env.INITIA_IUSD_DENOM_TESTNET;
+    expect(getInitiaAsset('initia-testnet', 'iUSD').verified).toBe(false);
+  });
+
+  it('env override flips verified=true and replaces denom', async () => {
+    process.env.INITIA_IUSD_DENOM_TESTNET = 'l2/test_iusd_denom_for_test';
+    const { getInitiaAsset } = await import('../src/initia/assets.js');
+    const a = getInitiaAsset('initia-testnet', 'iUSD');
+    expect(a.denom).toBe('l2/test_iusd_denom_for_test');
+    expect(a.verified).toBe(true);
+    delete process.env.INITIA_IUSD_DENOM_TESTNET;
+  });
+
+  it('parseInitiaAmount / formatInitiaAmount round-trip 6-dec values', async () => {
+    const { parseInitiaAmount, formatInitiaAmount } = await import('../src/initia/assets.js');
+    expect(parseInitiaAmount('1.5')).toBe(1_500_000n);
+    expect(parseInitiaAmount('0.000001')).toBe(1n);
+    expect(formatInitiaAmount(1_500_000n)).toBe('1.5');
+    expect(formatInitiaAmount(1_000_000n)).toBe('1');
+  });
+
+  it('selectIusdCorridor: direct hit when buyer has iUSD on requested chain', async () => {
+    const { selectIusdCorridor } = await import('../src/initia/corridor.js');
+    const r = selectIusdCorridor({
+      requestedChain: 'initia-testnet',
+      requestedAmount: 1_000_000n,
+      iusdHoldings: { 'initia-testnet': 5_000_000n },
+    });
+    expect(r.kind).toBe('direct');
+  });
+
+  it('selectIusdCorridor: skip-api when buyer has USDC on Base Sepolia', async () => {
+    const { selectIusdCorridor } = await import('../src/initia/corridor.js');
+    const r = selectIusdCorridor({
+      requestedChain: 'initia-testnet',
+      requestedAmount: 1_000_000n,
+      usdcHoldings: { 'base-sepolia': 5_000_000n },
+      skipApiHealthy: true,
+    });
+    expect(r.kind).toBe('bridge');
+    if (r.kind === 'bridge') {
+      expect(r.corridor).toBe('skip-api');
+      expect(r.steps[0].fromChain).toBe('base-sepolia');
+    }
+  });
+
+  it('selectIusdCorridor: wormhole-ntt-fallback when Skip down', async () => {
+    const { selectIusdCorridor } = await import('../src/initia/corridor.js');
+    const r = selectIusdCorridor({
+      requestedChain: 'initia-mainnet',
+      requestedAmount: 1_000_000n,
+      usdcHoldings: { 'base-mainnet': 5_000_000n },
+      skipApiHealthy: false,
+    });
+    expect(r.kind).toBe('bridge');
+    if (r.kind === 'bridge') expect(r.corridor).toBe('wormhole-ntt-fallback');
+  });
+
+  it('selectIusdCorridor: no-route when nothing matches', async () => {
+    const { selectIusdCorridor } = await import('../src/initia/corridor.js');
+    const r = selectIusdCorridor({
+      requestedChain: 'initia-testnet',
+      requestedAmount: 1_000_000n,
+      usdcHoldings: {},
+    });
+    expect(r.kind).toBe('no-route');
+  });
+
+  it('LayerZeroAusdClient.bridge throws on testnet network', async () => {
+    const { LayerZeroAusdClient } = await import('../src/initia/corridor.js');
+    const lz = new LayerZeroAusdClient({});
+    await expect(
+      lz.bridge({ amount: 1n, recipient: 'init1...', network: 'testnet' }),
+    ).rejects.toMatchObject({ code: 'LAYERZERO_AUSD_TESTNET_UNAVAILABLE' });
+  });
+
+  it('InitiaIusdAdapter.detect parses cosmos-msgsend challenge', async () => {
+    const { InitiaIusdAdapter } = await import('../src/adapters/initia-iusd.js');
+    const { InitiaClient } = await import('../src/initia/client.js');
+    const ic = new InitiaClient({ chainKey: 'initia-testnet' });
+    const adapter = new InitiaIusdAdapter(ic, 'initia-testnet');
+    const challenge = Buffer.from(JSON.stringify({
+      x402Version: 1, accepts: [{
+        scheme: 'cosmos-msgsend', network: 'initiation-2', asset: 'iUSD',
+        payTo: 'init1abc', maxAmountRequired: '10000',
+      }],
+    })).toString('base64');
+    const r = new Response(null, { status: 402, headers: { 'payment-required': challenge } });
+    expect(adapter.detect(r)).toBe(true);
+
+    const xrplChallenge = Buffer.from(JSON.stringify({
+      accepts: [{ scheme: 'xrpl', network: 'xrpl:mainnet' }],
+    })).toString('base64');
+    const r2 = new Response(null, { status: 402, headers: { 'payment-required': xrplChallenge } });
+    expect(adapter.detect(r2)).toBe(false);
   });
 });
 

@@ -12,7 +12,7 @@ const FLARE_NETWORKS = new Set([
 export function detectProtocol(
   response: Response,
   preference: ProtocolType = 'auto',
-): 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'morph-x402' | 'flare-x402' | 'unknown' {
+): 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'morph-x402' | 'flare-x402' | 'cosmos-msgsend' | 'unknown' {
   const paymentHeader = response.headers.get('payment-required') ?? response.headers.get('x-payment-required') ?? '';
   const authHeader = response.headers.get('www-authenticate') ?? '';
   const hasX402 = !!paymentHeader;
@@ -23,7 +23,11 @@ export function detectProtocol(
 
   if (hasX402) {
     try {
-      const network = JSON.parse(Buffer.from(paymentHeader, 'base64').toString())?.accepts?.[0]?.network as string | undefined;
+      const accept = JSON.parse(Buffer.from(paymentHeader, 'base64').toString())?.accepts?.[0];
+      // v0.23 — cosmos-msgsend is identified by scheme (not network) since cosmos
+      // chains use bare chain-id strings ('interwoven-1') without a stable namespace prefix.
+      if (accept?.scheme === 'cosmos-msgsend') return 'cosmos-msgsend';
+      const network = accept?.network as string | undefined;
       if (network && FLARE_NETWORKS.has(network)) return 'flare-x402';
       if (network && MORPH_NETWORKS.has(network)) return 'morph-x402';
       if (network?.startsWith('stellar:')) return 'stellar-x402';

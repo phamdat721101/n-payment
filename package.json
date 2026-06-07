@@ -1,7 +1,7 @@
 {
   "name": "n-payment",
-  "version": "0.22.1",
-  "description": "Multi-protocol payment SDK for Web3 agents — RLUSD multichain via Wormhole NTT (Ethereum + Base + Optimism + Ink + Unichain, v0.22), Stellar multi-stable (MGUSD + USDC + EURC, v0.21) with asset-aware Session payment channels + SEP-24 MoneyGram off-ramp + KYA-tier gate, x402, MPP, GOAT x402 + USDC Acquisition Router (PegBTC swap / LayerZero OFT / BitVM peg-in, v0.17), XRPL (RLUSD + auto XRP→RLUSD swap + XLS-65 vault treasury, v0.14), Flare FXRP direct-minting bridge on Coston2 (v0.15), Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, SpaceRouter residential-proxy bandwidth on Creditcoin (v0.11), Aave yield-bearing treasury with GHO + Flash Mint + Credit Delegation (v0.13), batch settlement, streaming payments with policy engine and OWS wallet security",
+  "version": "0.23.0-rc.0",
+  "description": "Multi-protocol payment SDK for Web3 agents — iUSD on Initia (Cosmos-SDK) + USDC-anywhere → iUSD bridge corridor via Skip API / LayerZero / Wormhole NTT (v0.23), RLUSD multichain via Wormhole NTT (Ethereum + Base + Optimism + Ink + Unichain, v0.22), Stellar multi-stable (MGUSD + USDC + EURC, v0.21), x402, MPP, GOAT x402 + USDC Acquisition Router (v0.17), XRPL (RLUSD + auto XRP→RLUSD swap + XLS-65 vault treasury, v0.14), Flare FXRP direct-minting bridge on Coston2 (v0.15), Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, SpaceRouter residential-proxy bandwidth on Creditcoin (v0.11), Aave yield-bearing treasury with GHO + Flash Mint + Credit Delegation (v0.13), batch settlement, streaming payments with policy engine and OWS wallet security",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -135,7 +135,10 @@
     "@wormhole-foundation/sdk": ">=2.0.0",
     "@wormhole-foundation/sdk-evm": ">=2.0.0",
     "@wormhole-foundation/sdk-evm-ntt": ">=2.0.0",
-    "ethers": ">=6.0.0"
+    "ethers": ">=6.0.0",
+    "@cosmjs/stargate": ">=0.32.0",
+    "@cosmjs/proto-signing": ">=0.32.0",
+    "@skip-go/client": ">=0.16.0"
   },
   "peerDependenciesMeta": {
     "@open-wallet-standard/core": {
@@ -190,6 +193,15 @@
       "optional": true
     },
     "ethers": {
+      "optional": true
+    },
+    "@cosmjs/stargate": {
+      "optional": true
+    },
+    "@cosmjs/proto-signing": {
+      "optional": true
+    },
+    "@skip-go/client": {
       "optional": true
     }
   }

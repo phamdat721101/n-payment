@@ -296,6 +296,26 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
       RLUSD: '0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258',
     },
   },
+  // ── v0.23 — Initia (Cosmos-SDK L1 + Interwoven Rollups) ─────────────────
+  // chainId is set to 0 because Cosmos-SDK chains identify by string id (caip2).
+  // Token addresses are denoms (string) — populated at runtime from INITIA_ASSETS.
+  // RPC/REST URLs follow Initia's documented public endpoints; override via InitiaConfig.
+  'initia-mainnet': {
+    chainId: 0,
+    caip2: 'cosmos:interwoven-1',
+    name: 'Initia',
+    rpcUrl: 'https://rpc.initia.xyz',
+    protocols: ['cosmos-msgsend'],
+    tokens: { INIT: 'uinit' },
+  },
+  'initia-testnet': {
+    chainId: 0,
+    caip2: 'cosmos:initiation-2',
+    name: 'Initia Testnet',
+    rpcUrl: 'https://rpc.initiation-2.initia.xyz',
+    protocols: ['cosmos-msgsend'],
+    tokens: { INIT: 'uinit' },
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

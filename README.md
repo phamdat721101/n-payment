@@ -4,6 +4,70 @@
 
 One npm install, one wallet, two prompts. Your agent gets unblocked from datacenter-IP-hostile sites (Cloudflare 1010/1020), pays per-byte in $SPACE on Creditcoin (chainId `102030`), and ships an on-chain audit trail with a 5-day-timelock-protected escrow. Nothing to deploy.
 
+> **v0.23 highlights** — First agentic SDK on **Cosmos-SDK / Initia**. AI agents pay in **iUSD on Initia** (`interwoven-1` mainnet + `initiation-2` testnet) via one `fetchWithPayment(url)` call. New `cosmos-msgsend` ProtocolType. Built-in **USDC-anywhere → iUSD-on-Initia bridge corridor** routes through Skip API (primary), LayerZero AUSD-OFT (mainnet), or v0.22's Wormhole NTT (fallback). Testnet-first, real Skip API integration — no heavy mocks. **Backward compatible.**
+
+## USDC on EVM → iUSD on Initia, one call (v0.23)
+
+n-payment v0.23 closes the Cosmos gap. iUSD is the only stablecoin where **reserve yield flows to the ecosystem** instead of the issuer (Agora-issued, VanEck-managed reserves, State Street custody). v0.23 ships only the bridge corridor; the yield-treasury layer ships in v0.24.
+
+```typescript
+import {
+  createPaymentClient,
+  InitiaClient, mnemonicSigner,
+  SkipApiClient, IusdBridgeOrchestrator,
+  parseInitiaAmount,
+} from 'n-payment';
+
+// 1) Set INITIA_IUSD_DENOM_TESTNET in env (denom resolved at call time).
+const client = createPaymentClient({
+  chains: ['base-sepolia', 'initia-testnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.OWS_KEY as `0x${string}` },
+  initia: { network: 'testnet', mnemonic: process.env.INITIA_MNEMONIC },
+});
+
+// 2) Wire the USDC → iUSD bridge orchestrator (Skip API rail).
+const initia = client.initiaClient!;
+const skip = new SkipApiClient();
+const orchestrator = new IusdBridgeOrchestrator({
+  initia, skip,
+  getHoldings: async () => ({
+    iusd: { 'initia-testnet': await initia.getIusdBalance() },
+    usdc: { 'base-sepolia': /* read via viem */ 5_000_000n },
+  }),
+  skipSigners: {
+    cosmos: async () => initia,                 // cosmos signer for the destination leg
+    evm: async () => /* viem WalletClient */ ({}) as never,
+    addresses: [{ chainId: '84532', address: await client.wallet.getAddressAsync(84532) }],
+  },
+});
+client.initiaAdapter!.setBridgeIfNeeded((req) => orchestrator.ensureIusd(req));
+
+// 3) Hit any iUSD-paywalled endpoint on initiation-2.
+//    PayRouter detects 402(cosmos-msgsend), bridges USDC→iUSD via Skip if short, settles via MsgSend.
+await client.fetchWithPayment('https://api.example.com/initia-paid-mcp');
+```
+
+**The corridor decision tree** (pure-fn `selectIusdCorridor`):
+
+| Holdings | Merchant wants | Path | Latency |
+|---|---|---|---|
+| iUSD on `initiation-2` | iUSD on `initiation-2` | `iusd-direct` | ~5s |
+| AUSD on Ethereum + LayerZero rail | iUSD on Initia | `layerzero-ausd` | ~60s |
+| USDC on EVM + Skip healthy | iUSD on Initia | `skip-api` | ~2 min |
+| USDC on EVM + Skip down | iUSD on Initia | `wormhole-ntt-fallback` | ~90s |
+
+**Peer-deps (all optional):**
+
+```bash
+pnpm add @cosmjs/stargate @cosmjs/proto-signing  # required for cosmos signing
+pnpm add @skip-go/client                          # required for Skip route execution (quoting works without)
+pnpm add @layerzerolabs/oft-evm                   # mainnet-only; AUSD-OFT testnet not deployed
+```
+
+See [`docs/PRD-v023-master-iusd-initia.md`](./docs/PRD-v023-master-iusd-initia.md) for full architecture and the 6 sub-PRDs.
+
+---
+
 > **v0.22 highlights** — RLUSD on 6 chains in one `fetchWithPayment` call: XRPL native + Ethereum + Base + Optimism + Ink + Unichain via Wormhole NTT 1.1.0. Facilitator-independent on-chain settlement (no Coinbase CDP dependency for any RLUSD chain). New `selectRlusdCorridor` pure-fn cross-chain router; `WormholeNttClient` + `WormholeNttAdapter` with per-tx + per-day caps; `RlusdExactAdapter` + on-chain `verifyExactRlusdPayment` / `verifyWormholeNttPayment` middleware helpers. **Backward compatible** — strict superset of v0.21.
 
 ## RLUSD on six chains, one `fetchWithPayment` (v0.22)
@@ -343,6 +407,8 @@ const data = await response.json();
 | **Flare Coston2 Testnet** | `flare-coston2-testnet` | Flare FXRP + x402 | **XRP→FXRP bridge + MockUSDT0 x402 + gasless FXRP (v0.19)** |
 | **Flare Songbird Mainnet** | `flare-songbird-mainnet` | Flare FXRP + x402 | **Canary network (v0.19)** |
 | **Flare Mainnet** | `flare-mainnet` | Flare FXRP + x402 | **Production agentic-payment network (v0.19)** |
+| **Initia Mainnet** | `initia-mainnet` | cosmos-msgsend | **iUSD on Cosmos-SDK + USDC bridge (v0.23)** |
+| **Initia Testnet** | `initia-testnet` | cosmos-msgsend | **Testnet for iUSD bridge corridor (v0.23)** |
 
 ---
 

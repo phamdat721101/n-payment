@@ -36,6 +36,9 @@ import { AaveTreasuryManager } from './aave/index.js';
 import { AaveGhoAdapter } from './adapters/aave-gho.js';
 import { WormholeNttClient } from './wormhole/ntt-client.js';
 import { WormholeNttAdapter } from './adapters/wormhole-ntt.js';
+import { InitiaClient, mnemonicSigner } from './initia/client.js';
+import { InitiaIusdAdapter } from './adapters/initia-iusd.js';
+import type { InitiaChainKey } from './initia/types.js';
 import type { Hex, Address } from 'viem';
 
 const SPACE_ROUTER_DEFAULTS = {
@@ -64,6 +67,10 @@ export class PaymentClient {
   wormholeClient?: WormholeNttClient;
   /** v0.22: Wormhole NTT adapter. Invoked by PayRouter v3 corridor (PRD-C). */
   wormholeAdapter?: WormholeNttAdapter;
+  /** v0.23: Initia (Cosmos-SDK) client. Soft-constructed when initia-* chain is in config.chains. */
+  initiaClient?: InitiaClient;
+  /** v0.23: Initia iUSD adapter. Use `.setBridgeIfNeeded(orchestrator.ensureIusd)` to enable USDC→iUSD auto-bridging. */
+  initiaAdapter?: InitiaIusdAdapter;
 
   constructor(config: NPaymentConfig) {
     this.config = createConfig(config);
@@ -336,6 +343,25 @@ export class PaymentClient {
         'WORMHOLE_NTT_NO_SIGNER',
         'Pass wormhole: { signers: { Optimism: ethersWallet, Base: ethersWallet, ... } }.',
       );
+    }
+
+    // ── v0.23: Initia (Cosmos-SDK) iUSD adapter — soft-disable when chain absent ──
+    const initiaChainKey = config.chains.find(
+      (c) => c === 'initia-mainnet' || c === 'initia-testnet',
+    ) as InitiaChainKey | undefined;
+    if (initiaChainKey) {
+      const initiaCfg = config.initia ?? {};
+      const signer = initiaCfg.mnemonic
+        ? () => mnemonicSigner(initiaCfg.mnemonic!)
+        : undefined;
+      this.initiaClient = new InitiaClient({
+        chainKey: initiaChainKey,
+        signer,
+        rpcUrl: initiaCfg.rpcUrl,
+        strict: initiaCfg.strict,
+      });
+      this.initiaAdapter = new InitiaIusdAdapter(this.initiaClient, initiaChainKey);
+      this.adapters.push(this.initiaAdapter);
     }
   }
 
