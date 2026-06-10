@@ -316,6 +316,45 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
     protocols: ['cosmos-msgsend'],
     tokens: { INIT: 'uinit' },
   },
+  // ── v0.25 — Celo L2 (op-stack + celo-kona zk, live since March 2025) ──────
+  // CIP-64 fee abstraction: ANY ERC-20 listed in FeeCurrencyDirectory can pay
+  // gas. The agent never needs to hold CELO. USDC is canonical Circle
+  // FiatTokenCeloV2_2; USDm = legacy cUSD (18-dec, Mento-issued); USDT is
+  // the Tether-issued L2 deployment. Fee-currency adapters wrap the raw
+  // ERC-20 into a CIP-64-compliant contract. EIP-712 domain for USDC is
+  // 'USD Coin' / '2' (verified on Celoscan implementation address).
+  'celo-mainnet': {
+    chainId: 42220,
+    caip2: 'eip155:42220',
+    name: 'Celo',
+    rpcUrl: 'https://forno.celo.org',
+    protocols: ['x402', 'celo-fee-abstracted'],
+    tokens: {
+      USDC: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C',
+      USDT: '0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e',
+      USDm: '0x765DE816845861e75A25fCA122bb6898B8B1282a',
+      USDC_FEE_ADAPTER: '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B',
+      USDT_FEE_ADAPTER: '0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72',
+      // Mento broker — pulls quotes for USDm/cKES/cREAL → USDC (verify post-deploy).
+      MENTO_BROKER: '0x777B8E2c0bDE2Be39B5b8c20F87B8b9A0a7d5F8a',
+      // Mento brand stables (v0.25 ships USDm/cKES/cREAL only).
+      cKES:  '0x456a3D042C0DbD3db53D5489e98dFb038553B0d0',
+      cREAL: '0xE4D517785D091D3c54818832dB6094bcc2744545',
+    },
+    // No facilitator URL — Celo merchants use thirdweb's facilitator (caller-supplied)
+    // or verify on-chain via celo-fee-abstracted adapter (RlusdExactAdapter pattern).
+  },
+  'celo-sepolia': {
+    chainId: 11142220,
+    caip2: 'eip155:11142220',
+    name: 'Celo Sepolia',
+    rpcUrl: 'https://forno.celo-sepolia.celo-testnet.org',
+    protocols: ['x402', 'celo-fee-abstracted'],
+    tokens: {
+      USDC: '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B',
+      USDC_FEE_ADAPTER: '0x4822e58de6f5e485eF90df51C41CE01721331dC0',
+    },
+  },
 };
 
 export function getChain(key: ChainKey): ChainConfig {

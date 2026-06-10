@@ -105,8 +105,8 @@ describe('createConfig', () => {
 // ─── chains ──────────────────────────────────────────────────────────────────
 
 describe('chains', () => {
-  it('has all 28 chains', () => {
-    expect(Object.keys(CHAINS)).toHaveLength(28);
+  it('has all 30 chains', () => {
+    expect(Object.keys(CHAINS)).toHaveLength(30);
   });
 
   it('getChain returns correct config', () => {
@@ -134,6 +134,36 @@ describe('chains', () => {
     expect(getChain('initia-mainnet').protocols).toContain('cosmos-msgsend');
     expect(getChain('initia-testnet').protocols).toContain('cosmos-msgsend');
     expect(getChain('initia-mainnet').tokens.INIT).toBe('uinit');
+  });
+
+  // ── v0.25 — Celo L2 (CIP-64 fee abstraction + Mento + Agent Visa) ─────────
+  it('celo chains registered with x402 + celo-fee-abstracted protocols', () => {
+    expect(getChain('celo-mainnet').chainId).toBe(42220);
+    expect(getChain('celo-sepolia').chainId).toBe(11142220);
+    expect(getChain('celo-mainnet').protocols).toContain('x402');
+    expect(getChain('celo-mainnet').protocols).toContain('celo-fee-abstracted');
+    expect(getChain('celo-sepolia').protocols).toContain('celo-fee-abstracted');
+  });
+
+  it('celo mainnet ships canonical USDC + USDT + USDm + fee adapters', () => {
+    const m = getChain('celo-mainnet').tokens;
+    expect(m.USDC).toBe('0xcebA9300f2b948710d2653dD7B07f33A8B32118C');
+    expect(m.USDT).toBe('0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e');
+    expect(m.USDm).toBe('0x765DE816845861e75A25fCA122bb6898B8B1282a');
+    expect(m.USDC_FEE_ADAPTER).toBe('0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B');
+    expect(m.USDT_FEE_ADAPTER).toBe('0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72');
+    expect(m.cKES).toBeDefined();
+    expect(m.cREAL).toBeDefined();
+  });
+
+  it('celo sepolia ships USDC + fee adapter for testnet', () => {
+    const s = getChain('celo-sepolia').tokens;
+    expect(s.USDC_FEE_ADAPTER).toBe('0x4822e58de6f5e485eF90df51C41CE01721331dC0');
+  });
+
+  it('getChainsForProtocol filters celo by celo-fee-abstracted', () => {
+    const all: any[] = ['celo-mainnet', 'celo-sepolia', 'base-mainnet'];
+    expect(getChainsForProtocol(all, 'celo-fee-abstracted')).toEqual(['celo-mainnet', 'celo-sepolia']);
   });
 });
 

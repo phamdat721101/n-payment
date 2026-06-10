@@ -4,6 +4,48 @@
 
 One npm install, one wallet, two prompts. Your agent gets unblocked from datacenter-IP-hostile sites (Cloudflare 1010/1020), pays per-byte in $SPACE on Creditcoin (chainId `102030`), and ships an on-chain audit trail with a 5-day-timelock-protected escrow. Nothing to deploy.
 
+> **v0.25 highlights** — First agentic SDK with **native fee abstraction**. Adds **Celo Mainnet** (`42220`) and **Celo Sepolia** (`11142220`) where the agent pays for an API in USDC and pays gas in the SAME USDC via CIP-64 — one balance, one tx, sub-cent fees, ~1s finality, agent never holds CELO. Ships three primitives: `CeloFeeAbstractedTransactor` (CIP-64 wrapper), composable Mento corridor (USDm + cKES + cREAL → USDC), and `CeloAgentVisaTracker` that mirrors Self.xyz Tourist/Work/Citizenship criteria so every `fetchWithPayment` counts toward Celo Agent Visa funding tiers. Wire-compatible with thirdweb's x402 facilitator. **Backward compatible.**
+
+## Pay any Celo x402 endpoint with zero CELO (v0.25)
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({
+  chains: ['celo-mainnet'],
+  ows: { wallet: 'my-agent', privateKey: process.env.CELO_PRIVATE_KEY as `0x${string}` },
+  celo: {
+    payAsset: 'USDC',                         // pay both gas and API in USDC
+    agentVisa: { selfAgentIdProvided: true }, // unlock Work tier at 1K tx / $5K volume
+  },
+});
+
+// 0 CELO needed. Gas paid in USDC via fee-currency adapter 0x2F25…602B.
+await client.fetchWithPayment('https://api.example.com/celo-paid-mcp');
+
+// Read your visa progress.
+const visa = await client.getCeloVisaStatus();
+console.log(visa?.tier, visa?.txCount, visa?.volumeUsd);
+```
+
+**Three primitives ship together:**
+
+```bash
+# Buyer + merchant demo against Celo Sepolia
+pnpm tsx examples/celo-x402-demo.ts buyer
+pnpm tsx examples/celo-x402-demo.ts merchant
+
+# cKES → USDC two-leg corridor (Mento USDm + Uniswap USDC)
+pnpm tsx examples/celo-mento-demo.ts 100
+
+# Agent skill matching the existing pay-*.sh JSON contract
+bash skills/pay-celo-x402.sh --wallet my-agent --url https://api.example.com/data --chain celo-mainnet
+```
+
+See [`docs/PRD-celo-x402-integration.md`](./docs/PRD-celo-x402-integration.md) for full architecture, CIP-64 mechanics, and the 30/60/90 Frontier Pool grant plan.
+
+---
+
 > **v0.23 highlights** — First agentic SDK on **Cosmos-SDK / Initia**. AI agents pay in **iUSD on Initia** (`interwoven-1` mainnet + `initiation-2` testnet) via one `fetchWithPayment(url)` call. New `cosmos-msgsend` ProtocolType. Built-in **USDC-anywhere → iUSD-on-Initia bridge corridor** routes through Skip API (primary), LayerZero AUSD-OFT (mainnet), or v0.22's Wormhole NTT (fallback). Testnet-first, real Skip API integration — no heavy mocks. **Backward compatible.**
 
 ## USDC on EVM → iUSD on Initia, one call (v0.23)
@@ -409,6 +451,8 @@ const data = await response.json();
 | **Flare Mainnet** | `flare-mainnet` | Flare FXRP + x402 | **Production agentic-payment network (v0.19)** |
 | **Initia Mainnet** | `initia-mainnet` | cosmos-msgsend | **iUSD on Cosmos-SDK + USDC bridge (v0.23)** |
 | **Initia Testnet** | `initia-testnet` | cosmos-msgsend | **Testnet for iUSD bridge corridor (v0.23)** |
+| **Celo Mainnet** | `celo-mainnet` | celo-fee-abstracted | **CIP-64 fee abstraction + Mento + Agent Visa (v0.25)** |
+| **Celo Sepolia** | `celo-sepolia` | celo-fee-abstracted | **Testnet for Celo CIP-64 + x402 (v0.25)** |
 
 ---
 

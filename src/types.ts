@@ -1,6 +1,6 @@
 // ─── Protocol & Chain ────────────────────────────────────────────────────────
 
-export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'wormhole-ntt' | 'rlusd-exact' | 'cosmos-msgsend' | 'auto';
+export type ProtocolType = 'x402' | 'mpp' | 'xrpl' | 'stellar-x402' | 'stellar-mpp' | 'stellar-mpp-session' | 'morph-x402' | 'spacerouter' | 'flare-fxrp' | 'flare-x402' | 'wormhole-ntt' | 'rlusd-exact' | 'cosmos-msgsend' | 'celo-fee-abstracted' | 'auto';
 
 export type ChainKey =
   | 'base-sepolia'
@@ -32,7 +32,72 @@ export type ChainKey =
   | 'unichain-mainnet'
   // v0.23 — Cosmos-SDK / Initia (USDC-EVM → iUSD-Initia bridge corridor)
   | 'initia-mainnet'
-  | 'initia-testnet';
+  | 'initia-testnet'
+  // v0.25 — Celo L2 (CIP-64 fee abstraction + Mento corridor + Agent Visa)
+  | 'celo-mainnet'
+  | 'celo-sepolia';
+
+// ─── Celo (v0.25) ────────────────────────────────────────────────────────────
+
+/** Celo Agent Visa tier — mirrors self.xyz/blog/agent-visa criteria. */
+export type CeloAgentVisaTier = 'none' | 'tourist' | 'work' | 'citizenship';
+
+/** Persisted Agent Visa state for a single agent address. */
+export interface AgentVisaState {
+  agentAddress: `0x${string}`;
+  txCount: number;
+  /** Cumulative payment volume in USD (best-effort, payAsset-agnostic). */
+  volumeUsd: number;
+  selfAgentIdProvided: boolean;
+  tier: CeloAgentVisaTier;
+  firstTxAt: number;
+  lastTxAt: number;
+  network: 'mainnet' | 'sepolia';
+}
+
+/**
+ * Pluggable storage backend for Agent Visa state. Single-responsibility
+ * interface — any backend (memory, JSON file, Redis, DynamoDB) can implement
+ * this without touching the tracker logic.
+ */
+export interface AgentVisaStorage {
+  read(agentAddress: `0x${string}`): Promise<AgentVisaState | null>;
+  write(state: AgentVisaState): Promise<void>;
+}
+
+/**
+ * v0.25 Celo configuration. All fields optional — the SDK soft-disables the
+ * Celo adapter when this config is absent (warn + skip, mirrors Morph/Flare
+ * pattern). Provide `celo: {}` to opt-in with all defaults.
+ */
+export interface CeloConfig {
+  /** Celo network. @default inferred from chains[] (sepolia if 'celo-sepolia' present, else mainnet) */
+  network?: 'mainnet' | 'sepolia';
+  /** Override Celo RPC URL. Default: per-network public Forno endpoint. */
+  rpcUrl?: string;
+  /** Token symbol used for both gas and payment via CIP-64. @default 'USDC' */
+  payAsset?: 'USDC' | 'USDT' | 'USDm';
+  /** Override fee-currency adapter address (escape hatch for new tokens). */
+  feeCurrencyAdapterOverride?: `0x${string}`;
+  /** Soft-disable fee abstraction; fall back to standard EIP-1559 (CELO gas). @default false */
+  disableFeeAbstraction?: boolean;
+  /** Throw on missing config / signer instead of warning + disabling. @default false */
+  strict?: boolean;
+  /** Mento corridor sub-config (USDm/cKES/cREAL → USDC). */
+  mento?: {
+    /** Override Mento Broker contract address. */
+    brokerOverride?: `0x${string}`;
+    /** Max acceptable slippage in basis points. @default 50 (0.5%) */
+    maxSlippageBps?: number;
+  };
+  /** Agent Visa tracker sub-config. */
+  agentVisa?: {
+    /** Pluggable storage backend. @default new MemoryAgentVisaStorage() */
+    storage?: AgentVisaStorage;
+    /** Set true if agent has a verified Self Agent ID — enables Work-tier upgrade. @default false */
+    selfAgentIdProvided?: boolean;
+  };
+}
 
 export interface ChainConfig {
   chainId: number;
@@ -426,6 +491,8 @@ export interface NPaymentConfig {
   // v0.23: Initia (Cosmos-SDK) + iUSD bridge corridor
   initia?: import('./initia/types.js').InitiaConfig;
   iusd?: import('./initia/types.js').IusdConfig;
+  // v0.25: Celo L2 (CIP-64 fee abstraction + Mento corridor + Agent Visa)
+  celo?: CeloConfig;
 }
 
 // ─── Adapter Interface (SOLID: Interface Segregation) ────────────────────────

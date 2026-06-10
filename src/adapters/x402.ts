@@ -15,6 +15,9 @@ const USDC_EIP712: Partial<Record<ChainKey, { name: string; version: string }>> 
   'arbitrum-sepolia': { name: 'USDC',     version: '2' },
   'bnb-mainnet':      { name: 'USD Coin', version: '2' },
   'bnb-testnet':      { name: 'USDC',     version: '2' },
+  // v0.25 — Celo USDC = Circle FiatTokenCeloV2_2 (verified on Celoscan).
+  'celo-mainnet':     { name: 'USD Coin', version: '2' },
+  'celo-sepolia':     { name: 'USD Coin', version: '2' },
 };
 
 const TRANSFER_AUTH_TYPES = {

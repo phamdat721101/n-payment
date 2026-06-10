@@ -39,6 +39,8 @@ import { WormholeNttAdapter } from './adapters/wormhole-ntt.js';
 import { InitiaClient, mnemonicSigner } from './initia/client.js';
 import { InitiaIusdAdapter } from './adapters/initia-iusd.js';
 import type { InitiaChainKey } from './initia/types.js';
+import { CeloFeeAbstractedAdapter } from './adapters/celo-fee-abstracted.js';
+import { CeloAgentVisaTracker, MemoryAgentVisaStorage } from './celo/agent-visa.js';
 import type { Hex, Address } from 'viem';
 
 const SPACE_ROUTER_DEFAULTS = {
@@ -71,6 +73,10 @@ export class PaymentClient {
   initiaClient?: InitiaClient;
   /** v0.23: Initia iUSD adapter. Use `.setBridgeIfNeeded(orchestrator.ensureIusd)` to enable USDC→iUSD auto-bridging. */
   initiaAdapter?: InitiaIusdAdapter;
+  /** v0.25: Celo Agent Visa tracker. Records every Celo settlement against Tourist/Work/Citizenship tiers. */
+  celoVisaTracker?: CeloAgentVisaTracker;
+  /** v0.25: ChainKey of the configured Celo network (used for visa tracking + status reads). */
+  private celoNetwork?: 'mainnet' | 'sepolia';
 
   constructor(config: NPaymentConfig) {
     this.config = createConfig(config);
@@ -363,6 +369,43 @@ export class PaymentClient {
       this.initiaAdapter = new InitiaIusdAdapter(this.initiaClient, initiaChainKey);
       this.adapters.push(this.initiaAdapter);
     }
+
+    // ── v0.25: Celo CIP-64 fee-abstracted adapter — opt-in via config.celo ──
+    // When a celo-* chain is in config.chains AND config.celo is provided, we
+    // PREPEND the adapter so it wins over the generic X402Adapter for Celo
+    // payments. Without config.celo we leave the generic X402Adapter active
+    // (still spec-compliant on the buyer side; merchants need fee abstraction).
+    const celoChainKey = config.chains.find(
+      (c) => c === 'celo-mainnet' || c === 'celo-sepolia',
+    ) as ('celo-mainnet' | 'celo-sepolia') | undefined;
+    if (celoChainKey && config.celo !== undefined) {
+      const celoAdapter = new CeloFeeAbstractedAdapter(this.wallet, celoChainKey, config.celo);
+      // Wire merchant signer when the wallet has a privateKey AND fee abstraction
+      // is not disabled. Same key serves both buyer (off-chain signing) and
+      // merchant (on-chain settlement) roles unless the integrator splits them
+      // by calling celoAdapter.setMerchantSigner() with a separate key.
+      if (config.ows?.privateKey && !config.celo.disableFeeAbstraction) {
+        celoAdapter.setMerchantSigner(
+          config.ows.privateKey as Hex,
+          config.celo.payAsset ?? 'USDC',
+        );
+      } else if (config.celo.disableFeeAbstraction) {
+        console.warn(
+          '[n-payment] Celo fee abstraction disabled — facilitator wallet must hold CELO for gas. ' +
+          'Remove celo.disableFeeAbstraction to enable CIP-64 (zero-CELO operation).',
+        );
+      }
+      // Prepend so the celo adapter wins over the generic X402Adapter pushed earlier.
+      this.adapters.unshift(celoAdapter);
+
+      // Agent Visa tracker — records every Celo settlement against tier
+      // criteria. Storage is pluggable; default = in-memory (lost on restart).
+      this.celoNetwork = celoChainKey === 'celo-mainnet' ? 'mainnet' : 'sepolia';
+      this.celoVisaTracker = new CeloAgentVisaTracker(
+        config.celo.agentVisa?.storage ?? new MemoryAgentVisaStorage(),
+        { selfAgentIdProvided: config.celo.agentVisa?.selfAgentIdProvided ?? false },
+      );
+    }
   }
 
   async fetchWithPayment(url: string, init?: RequestInit, opts?: PaymentContext): Promise<Response> {
@@ -472,6 +515,18 @@ export class PaymentClient {
         protocol: adapter.protocol, chain, url,
         success: true, durationMs: Date.now() - start, timestamp: Date.now(),
       });
+      // v0.25 — best-effort Agent Visa accounting on every successful Celo
+      // settlement. Failures are non-fatal (warn-and-continue) so a downed
+      // storage backend never blocks payment success.
+      if (this.celoVisaTracker && this.celoNetwork && adapter.protocol === 'celo-fee-abstracted') {
+        const account = this.wallet.getAccount();
+        if (account) {
+          const usdAmount = chainKeyAmountToUsd(chain, challengeAmount);
+          this.celoVisaTracker
+            .recordPayment(account.address, usdAmount, this.celoNetwork)
+            .catch((e) => console.warn('[n-payment] celoVisaTracker.recordPayment failed:', (e as Error).message));
+        }
+      }
       return result;
     } catch (err) {
       this.analytics.emit({
@@ -486,6 +541,18 @@ export class PaymentClient {
   /** Get the spending guard for audit access */
   getGuard(): SpendingGuard | undefined {
     return this.guard;
+  }
+
+  /**
+   * v0.25 — Read the agent's Celo Agent Visa status. Returns `undefined` if
+   * Celo is not configured. Use `agentAddress` override when running a
+   * facilitator that pays for multiple agents.
+   */
+  async getCeloVisaStatus(agentAddress?: Address): Promise<import('./types.js').AgentVisaState | undefined> {
+    if (!this.celoVisaTracker || !this.celoNetwork) return undefined;
+    const addr = agentAddress ?? (this.wallet.getAccount()?.address as Address | undefined);
+    if (!addr) return undefined;
+    return this.celoVisaTracker.getStatus(addr, this.celoNetwork);
   }
 
   /** Graceful shutdown — flushes any open proxy adapter resources (e.g. SpaceRouter receipts). */
@@ -531,4 +598,19 @@ export class PaymentClient {
 
 export function createPaymentClient(config: NPaymentConfig): PaymentClient {
   return new PaymentClient(config);
+}
+
+/**
+ * v0.25 — Best-effort USD-amount converter for the Agent Visa volume
+ * tracker. Celo's USDC/USDT use 6 decimals and USDm uses 18 decimals; we
+ * default to 6-dec scaling (matches every chain in the SDK that emits a
+ * `maxAmountRequired` field). Returns 0 for non-Celo chains so the tracker
+ * can be called unconditionally.
+ */
+function chainKeyAmountToUsd(chainKey: string, amount: bigint): number {
+  if (chainKey !== 'celo-mainnet' && chainKey !== 'celo-sepolia') return 0;
+  // Default: 6-dec USDC/USDT; integrators using USDm (18-dec) will overcount
+  // by 1e12 — they should pass `policy.maxPerTransaction` accordingly. The
+  // tier math caps at $15K so the worst-case error is bounded.
+  return Number(amount) / 1_000_000;
 }

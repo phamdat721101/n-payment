@@ -5,6 +5,8 @@ export type {
   OWSConfig, BtcLendingConfig, XrplConfig, StellarConfig, MorphConfig, PaymentContext,
   SpaceRouterConfig, SpaceRouterRegion, SpaceRouterIpType, ProxyAdapter,
   AaveConfig, FlareConfig, FlareNetwork, FlareX402Config, FlareGaslessConfig,
+  // v0.25 — Celo L2
+  CeloConfig, CeloAgentVisaTier, AgentVisaState, AgentVisaStorage,
 } from './types.js';
 export type {
   BazaarResource, BazaarSearchResult,
@@ -413,3 +415,31 @@ export type {
   VerifyRlusdResult,
   VerifyWormholeNttInput,
 } from './middleware.js';
+
+// ─── Celo CIP-64 fee abstraction + Mento + Agent Visa (v0.25) ───────────────
+export {
+  CeloFeeAbstractedTransactor,
+  TRANSFER_WITH_AUTHORIZATION_ABI,
+  type CeloChainKey,
+  type CeloPayAsset,
+  type CeloFeeAbstractedTransactorOptions,
+  MENTO_ASSETS,
+  selectMentoCorridor,
+  type MentoAssetSymbol,
+  type MentoAsset,
+  type MentoCorridorInput,
+  type MentoCorridorDecision,
+  type MentoCorridorLeg,
+  MentoBrokerClient,
+  type MentoBrokerClientOptions,
+  CeloAgentVisaTracker,
+  computeAgentVisaTier,
+  MemoryAgentVisaStorage,
+  JsonFileAgentVisaStorage,
+  type CeloAgentVisaTrackerOptions,
+} from './celo/index.js';
+export { CeloFeeAbstractedAdapter } from './adapters/celo-fee-abstracted.js';
+export type {
+  CeloEip3009Authorization,
+  CeloSettleResult,
+} from './adapters/celo-fee-abstracted.js';

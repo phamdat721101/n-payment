@@ -1,6 +1,6 @@
 {
   "name": "n-payment",
-  "version": "0.23.0",
+  "version": "0.25.0",
   "description": "Multi-protocol payment SDK for Web3 agents — iUSD on Initia (Cosmos-SDK) + USDC-anywhere → iUSD bridge corridor via Skip API / LayerZero / Wormhole NTT (v0.23), RLUSD multichain via Wormhole NTT (Ethereum + Base + Optimism + Ink + Unichain, v0.22), Stellar multi-stable (MGUSD + USDC + EURC, v0.21), x402, MPP, GOAT x402 + USDC Acquisition Router (v0.17), XRPL (RLUSD + auto XRP→RLUSD swap + XLS-65 vault treasury, v0.14), Flare FXRP direct-minting bridge on Coston2 (v0.15), Circle Nanopayments, AP2, Morph Network with HMAC facilitator + Reference Key, SpaceRouter residential-proxy bandwidth on Creditcoin (v0.11), Aave yield-bearing treasury with GHO + Flash Mint + Credit Delegation (v0.13), batch settlement, streaming payments with policy engine and OWS wallet security",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
