@@ -4,6 +4,28 @@
 
 One npm install, one wallet, two prompts. Your agent gets unblocked from datacenter-IP-hostile sites (Cloudflare 1010/1020), pays per-byte in $SPACE on Creditcoin (chainId `102030`), and ships an on-chain audit trail with a 5-day-timelock-protected escrow. Nothing to deploy.
 
+> **v0.27 highlights** — **OWS multichain wallet overhaul** (CAIP-2-native + full lifecycle). The legacy EVM-only `OWSWallet` is now CAIP-2-keyed: pass any chain ID (`xrpl:mainnet`, `solana:mainnet`, `cosmos:interwoven-1`, `eip155:8453`, …) to the same `getAddress` / `signMessage` / `signAndSend` / `signTransaction` calls and the SDK auto-resolves to the right OWS chain family — **all 11** (EVM, Solana, XRPL, Cosmos, Bitcoin, Sui, Tron, TON, Spark, Filecoin, NEAR). New `import { ows } from 'n-payment'` namespace exposes 25 lifecycle methods (create / import × 6 formats / export / backup / restore / recover / rotate / lock / unlock / discover / delete + policy CRUD + scoped API-key issuance + mnemonic utilities). One mnemonic, one config flag, eleven chain families. **Backward compatible** — every v0.25 method signature preserved exactly via TypeScript method overloading; `privateKey` mode unchanged.
+
+```typescript
+import { OWSWallet, ows } from 'n-payment';
+
+// One wallet, four chain families, one mnemonic
+const w = new OWSWallet({ wallet: 'agent-treasury' });
+await w.getAddress('eip155:8453');         // 0x...
+await w.getAddress('xrpl:mainnet');        // r...
+await w.getAddress('solana:mainnet');      // 7xKX...
+await w.getAddress('cosmos:interwoven-1'); // init1...
+
+// Multi-agent isolation in 2 lines
+const policy = await ows.createPolicy({ allowChains: ['eip155:8453'], maxValuePerTx: '5.00 USD' });
+const key = await ows.createApiKey({ name: 'sub-agent-A', wallets: ['agent-treasury'], policy });
+// hand `key.token` to the sub-agent; revoke any time without touching the master wallet.
+```
+
+See [`docs/PRD-v027-ows-multichain-overhaul.md`](./docs/PRD-v027-ows-multichain-overhaul.md) for the full design (Gstack D2+D5 locked at 42-43/45), CAIP-2 family table, error code reference, and rollback plan. The v0.25 OWS surface remains accessible — `OWSWallet({ wallet, privateKey }).getAddress(chainId: number)` keeps working unchanged.
+
+---
+
 > **v0.25 highlights** — First agentic SDK with **native fee abstraction**. Adds **Celo Mainnet** (`42220`) and **Celo Sepolia** (`11142220`) where the agent pays for an API in USDC and pays gas in the SAME USDC via CIP-64 — one balance, one tx, sub-cent fees, ~1s finality, agent never holds CELO. Ships three primitives: `CeloFeeAbstractedTransactor` (CIP-64 wrapper), composable Mento corridor (USDm + cKES + cREAL → USDC), and `CeloAgentVisaTracker` that mirrors Self.xyz Tourist/Work/Citizenship criteria so every `fetchWithPayment` counts toward Celo Agent Visa funding tiers. Wire-compatible with thirdweb's x402 facilitator. **Backward compatible.**
 
 ## Pay any Celo x402 endpoint with zero CELO (v0.25)

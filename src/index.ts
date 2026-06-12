@@ -14,9 +14,21 @@ export type {
 } from './types.js';
 
 // ─── OWS ─────────────────────────────────────────────────────────────────────
-export { OWSWallet } from './ows/wallet.js';
-export type { OWSSignResult } from './ows/types.js';
-export type { TransactionRequest } from './ows/wallet.js';
+// v0.27 — CAIP-2-native multichain wallet + full lifecycle facade.
+// Back-compat: OWSWallet class name + signatures preserved exactly.
+export { OWSWallet, OwsWallet, ows } from './ows/index.js';
+export {
+  FAMILY_TABLE, parseCaip2, resolveFamily, resolveSpec,
+  getDerivationPath, getSlip44, extractEvmChainId, listSupportedNamespaces,
+  createOWSDriver, listAvailableFamilies,
+} from './ows/index.js';
+export type {
+  OWSSignResult, TransactionRequest, ChainFamily, FamilySpec, SignedTx,
+  WalletDescriptor, WalletAccount, CreateWalletOpts, DiscoverOpts,
+  PolicyDef, PolicyId, PolicySummary,
+  ApiKeyId, ApiKeyOpts, ApiKeyIssued, ApiKeySummary,
+  Signer, Lifecycle, PolicyManager, KeyManager, OWSDriver,
+} from './ows/index.js';
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 export { CHAINS, getChain, getChainsForProtocol } from './chains.js';

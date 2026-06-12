@@ -50,3 +50,34 @@ export function goatError(code: keyof typeof GOAT_ACQUISITION_HINTS, contextMess
   const message = contextMessage ? `${code}: ${contextMessage}` : code;
   return new NPaymentError(message, code, hint);
 }
+
+/**
+ * v0.27 — OWS multichain wallet error codes.
+ * Each code carries an actionable hint so callers can self-recover or surface
+ * a useful message to the operator. Use `owsError(code, contextMsg?)` to construct.
+ */
+export const OWS_HINTS: Record<string, string> = {
+  OWS_CHAIN_FAMILY_NOT_SUPPORTED:
+    'Use one of: eip155, solana, bip122, cosmos, tron, ton, sui, xrpl, spark, fil, near. Stellar is not yet in OWS spec — track v0.28 contribution.',
+  OWS_SDK_NOT_INSTALLED:
+    'Run `pnpm add @open-wallet-standard/core` for OWS-native multichain mode, or pass `ows: { privateKey: "0x..." }` for legacy EVM-only mode.',
+  OWS_FAMILY_PARTIAL:
+    'Upgrade @open-wallet-standard/core to a version that signs this family, or fall back to the legacy privateKey path for EVM.',
+  OWS_WALLET_NOT_FOUND:
+    'Run `ows wallet create --name <name>` first, or call `ows.discoverWallets()` to list existing wallets.',
+  OWS_CONFIRM_REQUIRED:
+    'Pass `confirm: true` explicitly to acknowledge this irreversible action (export / delete / rotate).',
+  OWS_POLICY_VIOLATION:
+    'Pre-signing policy denied the request. Inspect ~/.ows/policies/<id>.json or use a different API key.',
+  OWS_INVALID_CAIP2:
+    'CAIP-2 chain ID must be of form `<namespace>:<reference>` (e.g. `eip155:8453`, `xrpl:mainnet`).',
+  OWS_CLI_NOT_AVAILABLE:
+    'The `ows` CLI binary is required for backup/restore/recover. Install via the OWS docs or pass `ows: { cliPath: "/abs/path/to/ows" }`.',
+};
+
+/** Construct an OWS_* NPaymentError with the canonical hint. */
+export function owsError(code: keyof typeof OWS_HINTS, contextMessage?: string): NPaymentError {
+  const hint = OWS_HINTS[code];
+  const message = contextMessage ? `${code}: ${contextMessage}` : code;
+  return new NPaymentError(message, code, hint);
+}
