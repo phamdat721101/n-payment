@@ -1,269 +1,405 @@
 # n-payment Integration Guide
 
+A chain-agnostic guide for wiring n-payment into your agent. Every flow shown here works the same way regardless of which chain or protocol the merchant is using — the SDK detects the right rail off the 402 response.
+
+---
+
 ## Installation
 
 ```bash
 npm install n-payment
 ```
 
-### Prerequisites
+The only required runtime dependency is `viem`. Adapter-specific peers (xrpl, @stellar/stellar-sdk, @solana/web3.js, @cosmjs/stargate, ethers, mppx, @x402/*, @wormhole-foundation/sdk, @skip-go/client, @open-wallet-standard/core) are listed as **optional** peer dependencies — install only the ones you actually use.
+
+### Wallet bootstrap (OWS)
 
 ```bash
-# Install OWS (Open Wallet Standard)
+# Install OWS (Open Wallet Standard) CLI — optional but recommended
 curl -fsSL https://docs.openwallet.sh/install.sh | bash
+
 ows wallet create --name my-agent
-ows fund deposit --wallet my-agent  # testnet faucet
+ows wallet derive --wallet my-agent --chain eip155:8453   # EVM
+ows wallet derive --wallet my-agent --chain xrpl:mainnet  # XRPL
+ows wallet derive --wallet my-agent --chain solana:mainnet
 ```
 
-### Environment Variables
+Or skip OWS entirely and pass a private key:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OWS_WALLET` | Yes | OWS wallet name |
-| `CDP_API_KEY` | Mainnet only | Coinbase Developer Platform API key |
-| `GOAT_API_KEY` | GOAT chains | GOAT Network API key |
-| `GOAT_API_SECRET` | GOAT chains | GOAT Network API secret |
-| `GOAT_MERCHANT_ID` | GOAT chains | GOAT merchant ID |
+```typescript
+ows: { wallet: 'my-agent', privateKey: process.env.PRIVATE_KEY as `0x${string}` }
+```
+
+### Environment variables (only what each adapter needs)
+
+| Variable                | Used by                                         |
+| ----------------------- | ----------------------------------------------- |
+| `OWS_WALLET`            | Default OWS wallet name                         |
+| `CDP_API_KEY`           | CDP-hosted x402 facilitator (mainnet)           |
+| `GOAT_API_KEY` / etc.   | GOAT Network x402 / BTC lending                 |
+| `STELLAR_SECRET_KEY`    | Stellar adapters                                |
+| `MORPH_ACCESS_KEY`      | Morph x402 (HMAC facilitator)                   |
+| `XRPL_SEED`             | XRPL adapter                                    |
+| `INITIA_MNEMONIC`       | Initia / Cosmos `MsgSend`                       |
+| `WORMHOLE_*`            | Wormhole NTT cross-chain corridor               |
+
+Most agents only need `OWS_WALLET` (or `PRIVATE_KEY`) plus the env block for whichever chains they target.
 
 ---
 
-## 1. Buyer Integration — Pay for x402 Services
+## 1. Buyer integration — call any paid API automatically
 
-### Minimal Example
+### Minimal example
 
 ```typescript
 import { createPaymentClient } from 'n-payment';
 
 const client = createPaymentClient({
-  chains: ['base-sepolia'],
-  ows: { wallet: 'my-agent' },
+  chains: ['base-mainnet'],
+  ows:    { wallet: 'my-agent' },
 });
 
-const res = await client.fetchWithPayment('https://api.example.com/data');
+const res  = await client.fetchWithPayment('https://api.example.com/data');
 const data = await res.json();
 ```
 
-`fetchWithPayment()` handles the full 402 cycle: request → detect protocol → sign payment → retry with proof.
+`fetchWithPayment()` handles the full 402 cycle: request → detect protocol → run policy guard → sign payment → retry with proof header → return body. The chain it settles on is whatever the server's challenge specifies — the agent never picks.
 
-### With Service Discovery
+### Multi-chain configuration
+
+Configure every chain your agent might encounter; the SDK picks based on the 402 challenge:
+
+```typescript
+const client = createPaymentClient({
+  chains: [
+    'base-mainnet',
+    'arbitrum-sepolia',
+    'xrpl-mainnet',
+    'stellar-mainnet',
+    'solana-mainnet',
+    'initia-mainnet',
+  ],
+  ows: { wallet: 'my-agent' },
+});
+
+// Agent code never branches on chain — same call regardless of which rail the merchant uses.
+const res = await client.fetchWithPayment(serviceUrl);
+```
+
+### With spending policy + audit log
+
+```typescript
+const client = createPaymentClient({
+  chains: ['base-mainnet'],
+  ows:    { wallet: 'my-agent' },
+  policy: {
+    maxPerTransaction:    100_000n,                // $0.10
+    maxPerHour:         1_000_000n,                // $1.00
+    maxPerDay:         10_000_000n,                // $10.00
+    rateLimit:        { maxRequests: 100, windowMs: 60_000 },
+    blocklist:        ['0xKnownScam...'],
+    trustedFacilitators: ['https://api.cdp.coinbase.com/platform/v2/x402'],
+  },
+});
+
+await client.fetchWithPayment(url);
+
+const audit = client.getGuard()?.getAudit();
+const summary = audit?.getSpendingSummary();      // { total, count }
+const entry   = audit?.queryByReferenceKey('...'); // reconcile against merchant order
+```
+
+### With service discovery
 
 ```typescript
 import { createPaymentClient, createBazaarClient } from 'n-payment';
 
-// Discover services
 const bazaar = createBazaarClient({
   facilitatorUrl: 'https://api.cdp.coinbase.com/platform/v2/x402',
 });
-const result = await bazaar.search('weather');
-const service = result.resources[0];
 
-// Pay and consume
-const client = createPaymentClient({
-  chains: ['base-mainnet'],
-  ows: { wallet: 'my-agent' },
-});
-const res = await client.fetchWithPayment(service.resource);
-```
+const { resources } = await bazaar.search('weather');
+const service       = resources[0];
 
-### With GOAT BTC Lending
-
-```typescript
-const client = createPaymentClient({
-  chains: ['goat-testnet'],
-  ows: { wallet: 'goat-agent' },
-  goat: { apiKey: '...', apiSecret: '...', merchantId: '...' },
-  btcLending: { vaultAddress: '0x...', collateralRatio: 150 },
-});
-// Locks BTC → borrows USDC → pays → repays automatically
-await client.fetchWithPayment('https://api.goat.network/data');
+const client = createPaymentClient({ chains: ['base-mainnet'], ows: { wallet: 'my-agent' } });
+const res    = await client.fetchWithPayment(service.resource);
 ```
 
 ---
 
-## 2. Seller Integration — Accept Crypto Payments
+## 2. Seller integration — accept agent payments on your API
 
 ```typescript
 import express from 'express';
 import { createPaywall, createHealthEndpoint } from 'n-payment';
 
-const app = express();
-
 const config = {
   routes: {
     'GET /api/data': {
-      price: '10000', // $0.01 USDC (6 decimals)
+      price:       '10000',  // $0.01 USDC, 6 decimals
       description: 'Premium data endpoint',
-      x402: { payTo: '0xYourAddress' },
+      x402:        { payTo: '0xYourAddress' },
     },
   },
 };
 
+const app = express();
+app.use(express.json());
 app.use(createPaywall(config));
-app.get('/health', createHealthEndpoint(config));
-app.get('/api/data', (req, res) => res.json({ result: 'paid content' }));
+app.get('/health',   createHealthEndpoint(config));
+app.get('/api/data', (_req, res) => res.json({ result: 'paid content' }));
 app.listen(3000);
 ```
 
-### Multi-Protocol (x402 + MPP)
+### Multi-protocol on the same route
 
 ```typescript
 'GET /api/data': {
   price: '10000',
-  x402: { payTo: '0xYourAddress' },
-  mpp: { currency: '0x20c0...', recipient: '0xYourAddress' },
+  x402:  { payTo: '0xYourAddress' },
+  mpp:   { currency: '0x20c0...', recipient: '0xYourAddress' },
 }
 ```
 
+`createPaywall` will accept either an `x402` payment header or an MPP credential. The agent client picks whichever matches its configured chain — without your server caring which one arrives.
+
 ---
 
-## 3. Agent Framework Integration
-
-### Generic Pattern
+## 3. Agent-commerce integration — sell tools, not endpoints
 
 ```typescript
-import { createPaymentClient, createBazaarClient } from 'n-payment';
+import express from 'express';
+import { createAgentProvider, paidTool, AgentCard } from 'n-payment';
 
-const bazaar = createBazaarClient({ mockCatalog: true }); // or facilitatorUrl for mainnet
-const client = createPaymentClient({ chains: ['base-sepolia'], ows: { wallet: 'my-agent' } });
+const provider = createAgentProvider({
+  name:        'WeatherBot',
+  description: 'Weather data for AI agents',
+  payTo:       '0xYourAddress',
+  chain:       'base-mainnet',
+  tools: [
+    paidTool({
+      name:        'forecast',
+      description: 'Get weather forecast',
+      price:        10_000n,
+      handler:      async ({ city }: { city: string }) => ({ city, temp: 22 }),
+    }),
+  ],
+});
 
-// Agent tool: discover and pay
+const app = express();
+app.use(express.json());
+app.use(provider.middleware());
+app.get('/.well-known/agent.json', AgentCard.fromProvider(provider, 'https://your-api.com').handler());
+app.listen(3000);
+```
+
+### As a paid MCP server
+
+```typescript
+import { createPaidMcpServer, paidTool } from 'n-payment/mcp';
+
+const server = createPaidMcpServer({
+  name:    'WeatherBot',
+  payTo:   '0xYourAddress',
+  chain:   'base-mainnet',
+  tools: [paidTool({ name: 'forecast', price: 10_000n, handler: async () => ({ temp: 22 }) })],
+});
+
+await server.listen(3000);
+```
+
+Any MCP-spec host (Claude Desktop, Cursor, ChatGPT, AWS Bedrock AgentCore, etc.) can register, discover, pay, and call.
+
+---
+
+## 4. Agent-framework wrappers
+
+### Generic payment tool
+
+```typescript
+import { createPaymentClient } from 'n-payment';
+
+const client = createPaymentClient({ chains: ['base-mainnet'], ows: { wallet: 'my-agent' } });
+
+export async function callPaidApi(url: string) {
+  const res = await client.fetchWithPayment(url);
+  return res.json();
+}
+```
+
+### LangChain
+
+```typescript
+import { Tool } from 'langchain/tools';
+import { createPaymentClient } from 'n-payment';
+
+class PaidApiTool extends Tool {
+  name        = 'paid_api';
+  description = 'Call any paid API; SDK auto-handles 402 across any supported chain.';
+  private client = createPaymentClient({ chains: ['base-mainnet'], ows: { wallet: 'agent' } });
+  async _call(url: string) { return JSON.stringify(await (await this.client.fetchWithPayment(url)).json()); }
+}
+```
+
+### Discovery + pay (any framework)
+
+```typescript
+import { createBazaarClient, createPaymentClient } from 'n-payment';
+
+const bazaar = createBazaarClient({ mockCatalog: true });
+const client = createPaymentClient({ chains: ['base-mainnet'], ows: { wallet: 'my-agent' } });
+
 async function callPaidService(query: string) {
   const { resources } = await bazaar.search(query);
-  if (!resources.length) throw new Error(`No service found for: ${query}`);
+  if (!resources.length) throw new Error(`No service for: ${query}`);
   return client.fetchWithPayment(resources[0].resource);
 }
 ```
 
-### LangChain Tool
+---
+
+## 5. Streaming / batch / sub-cent flows
+
+For high-frequency calls or sub-cent prices, swap the on-chain settle for an off-chain primitive.
 
 ```typescript
-import { Tool } from 'langchain/tools';
-import { createPaymentClient, createBazaarClient } from 'n-payment';
+import { BatchSettlementManager, StreamingPaymentManager } from 'n-payment';
 
-class PaidAPITool extends Tool {
-  name = 'paid_api';
-  description = 'Call a paid API service using x402 payment';
-  private client = createPaymentClient({ chains: ['base-sepolia'], ows: { wallet: 'my-agent' } });
-  private bazaar = createBazaarClient({ mockCatalog: true });
+// Off-chain vouchers, batched onchain later (good for hundreds of micro-calls)
+const batch   = new BatchSettlementManager();
+const session = batch.openSession({ chain: 'base-mainnet', budget: 1_000_000n, escrowContract: '0x...' });
+const voucher = batch.signVoucher(session.id, 100n);
 
-  async _call(query: string): Promise<string> {
-    const { resources } = await this.bazaar.search(query);
-    if (!resources.length) return 'No service found';
-    const res = await this.client.fetchWithPayment(resources[0].resource);
-    return JSON.stringify(await res.json());
-  }
-}
+// Interval-based streaming (good for metered LLM / API consumption)
+const streaming = new StreamingPaymentManager();
+const stream    = streaming.createStream({
+  provider: '0xProvider', chain: 'base-mainnet',
+  budget: 5_000_000n, intervalMs: 60_000, maxPerInterval: 100_000n,
+});
+streaming.recordUsage(stream.id, 1_000n);
+streaming.settleInterval(stream.id);
 ```
 
 ---
 
-## 4. Off-Ramp Integration
+## 6. Off-ramp integration
 
 ```typescript
 import { OffRampClient, MockMoonPayAdapter } from 'n-payment';
 
 const offramp = new OffRampClient(new MockMoonPayAdapter());
 
-// Get quote
 const quote = await offramp.getQuote({
   amount: '100.00', token: 'USDC', chain: 'base-mainnet', fiatCurrency: 'USD',
 });
-console.log(`$100 USDC → $${quote.fiatAmount} USD`);
 
-// Withdraw
 const receipt = await offramp.withdraw({
   amount: '100.00', token: 'USDC', chain: 'base-mainnet',
   destination: { type: 'bank_account', id: 'bank-123' },
 });
 ```
 
-### Custom Adapter
-
-```typescript
-import type { OffRampAdapter } from 'n-payment';
-
-class MyOffRampAdapter implements OffRampAdapter {
-  readonly provider = 'my-provider';
-  async getSupportedCurrencies() { return ['USD']; }
-  async getQuote(params) { /* call your API */ }
-  async withdraw(params) { /* call your API */ }
-}
-```
+A real-world Stellar SEP-24 anchor adapter (`StellarAnchorClient`) is also exported — it handles SEP-10 auth + SEP-24 cash-out polling end to end.
 
 ---
 
-## 5. Configuration Reference
+## 7. Configuration reference
 
 ```typescript
 interface NPaymentConfig {
-  chains: ChainKey[];           // Required: ['base-sepolia'], ['base-mainnet', 'goat-testnet']
-  ows: { wallet: string };      // Required: OWS wallet name
-  protocol?: 'x402'|'mpp'|'auto'; // Default: 'auto'
-  goat?: GoatCredentials;       // Required for goat-* chains
-  btcLending?: BtcLendingConfig; // Optional: BTC collateral
+  chains: ChainKey[];           // any subset of CHAINS — 27+ supported
+  ows:    { wallet: string; privateKey?: `0x${string}` };
+  protocol?: 'x402' | 'mpp' | 'auto';
+
+  policy?: {
+    maxPerTransaction?: bigint;
+    maxPerHour?:        bigint;
+    maxPerDay?:         bigint;
+    rateLimit?:         { maxRequests: number; windowMs: number };
+    blocklist?:         string[];
+    trustedFacilitators?: string[];
+  };
+
+  ap2?:             AP2Config;
+  batchSettlement?: { enabled: true };
+  streaming?:       { defaultInterval: number };
+  x402?:            { usePermit2: boolean };
+
+  // Adapter-specific blocks (all optional — only used when a chain in `chains` needs it)
+  aave?:        AaveConfig;
+  xrpl?:        XrplConfig;
+  stellar?:     StellarConfig;
+  solana?:      { keypair };
+  morph?:       MorphConfig;
+  goat?:        GoatCredentials;
+  flare?:       FlareConfig;
+  initia?:      InitiaConfig;
+  spacerouter?: SpaceRouterConfig;
+  wormhole?:    WormholeConfig;
+  circle?:      CircleConfig;
+
   analytics?: { plugins: AnalyticsPlugin[] };
 }
 ```
 
-### Supported Chains
-
-| ChainKey | Chain ID | Protocol | Network |
-|----------|----------|----------|---------|
-| `base-sepolia` | 84532 | x402 | Testnet |
-| `base-mainnet` | 8453 | x402 | Mainnet |
-| `arbitrum-sepolia` | 421614 | x402 | Testnet |
-| `goat-testnet` | 48816 | GOAT x402 | Testnet |
-| `tempo-testnet` | 2 | MPP | Testnet |
+A new chain or protocol is added by implementing the `PaymentAdapter` interface (`detect()` + `pay()`); nothing in `PaymentClient` or in your agent code changes.
 
 ---
 
-## 6. Testnet → Mainnet Migration
+## 8. Testnet → mainnet migration
 
 ```diff
   const client = createPaymentClient({
 -   chains: ['base-sepolia'],
 +   chains: ['base-mainnet'],
-    ows: { wallet: 'my-agent' },
+    ows:    { wallet: 'my-agent' },
   });
 ```
 
-```diff
-  const bazaar = createBazaarClient({
--   mockCatalog: true,
-+   facilitatorUrl: 'https://api.cdp.coinbase.com/platform/v2/x402',
-  });
-```
+Mainnet checklist:
 
-Checklist:
-- [ ] Fund OWS wallet on mainnet
-- [ ] Set `CDP_API_KEY` for mainnet facilitator
-- [ ] Switch chain keys from `*-sepolia` to mainnet
-- [ ] Update USDC contract addresses (automatic via chain config)
-- [ ] Test with small amounts first
+- [ ] Fund the OWS wallet on every chain you configured
+- [ ] Set adapter env vars (e.g. `CDP_API_KEY` for the CDP facilitator)
+- [ ] Tighten `policy.maxPerTransaction` / `maxPerDay` to fiat caps
+- [ ] Pre-load `aave.minIdleBalance` if you enabled `autoYield`
+- [ ] Run a small-amount end-to-end before scaling up
 
 ---
 
-## 7. Error Handling
+## 9. Error handling
 
 ```typescript
-import { NPaymentError, InsufficientBalanceError, AdapterNotFoundError } from 'n-payment';
+import {
+  NPaymentError,
+  InsufficientBalanceError,
+  AdapterNotFoundError,
+  ChallengeParseError,
+} from 'n-payment';
 
 try {
   await client.fetchWithPayment(url);
 } catch (err) {
-  if (err instanceof InsufficientBalanceError) {
-    console.log('Fund wallet:', err.hint);
-  } else if (err instanceof AdapterNotFoundError) {
-    console.log('Wrong chain config:', err.hint);
-  } else if (err instanceof NPaymentError) {
-    console.log(`${err.code}: ${err.message}`);
-  }
+  if (err instanceof InsufficientBalanceError) console.log('Fund wallet:', err.hint);
+  else if (err instanceof AdapterNotFoundError)  console.log('Wrong chain config:', err.hint);
+  else if (err instanceof ChallengeParseError)   console.log('Malformed 402:', err.hint);
+  else if (err instanceof NPaymentError)         console.log(`${err.code}: ${err.message}`);
+  else throw err;
 }
 ```
 
-| Error | Code | When |
-|-------|------|------|
-| `NPaymentError` | Various | Base error class |
-| `InsufficientBalanceError` | `INSUFFICIENT_BALANCE` | Wallet can't cover payment |
-| `AdapterNotFoundError` | `NO_ADAPTER` | No adapter for detected protocol |
-| `ChallengeParseError` | `CHALLENGE_PARSE` | Malformed 402 response |
+| Error                          | Code                   | When                                              |
+| ------------------------------ | ---------------------- | ------------------------------------------------- |
+| `NPaymentError`                | various                | Base class                                        |
+| `InsufficientBalanceError`     | `INSUFFICIENT_BALANCE` | Wallet can't cover the required amount            |
+| `AdapterNotFoundError`         | `NO_ADAPTER`           | Detected protocol has no adapter for your chains  |
+| `ChallengeParseError`          | `CHALLENGE_PARSE`      | The 402 response can't be parsed                  |
+
+Every error carries a `code` and an actionable `hint`. The audit log records the failure regardless of whether a payment was attempted — useful for post-hoc reconciliation.
+
+---
+
+## See also
+
+- `README.md` — full SDK overview, capability matrix, agentic primitives.
+- `CHANGELOG.md` — release-by-release feature additions.
+- `docs/` — protocol-specific PRDs and architecture notes for each rail (EVM x402, MPP, XRPL, Stellar, Solana, Cosmos / Initia, Wormhole NTT, Aave treasury, etc.).
