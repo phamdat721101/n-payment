@@ -143,6 +143,20 @@ export interface XrplConfig {
    */
   minXrpReserve?: bigint;
 
+  // ── v0.28 T54 x402 ──────────────────────────────────────────────────────
+  /**
+   * Override the XRPL x402 facilitator URL used by the merchant middleware.
+   * When omitted, the default per network is the T54-hosted endpoint
+   * (`xrpl-facilitator-{testnet|mainnet}.t54.ai`). Buyer adapters do **not**
+   * call the facilitator directly; this is merchant-side only.
+   */
+  facilitatorUrl?: string;
+  /**
+   * Override the SourceTag stamped on every x402 Payment transaction. Used by
+   * T54's `x402scan` indexer to attribute traffic. @default 804681468
+   */
+  sourceTag?: number;
+
   // ── v0.14 XLS-65 treasury ───────────────────────────────────────────────
   /** XLS-65 vault treasury (yield-parity with v0.13 Aave manager). Omit to disable. */
   treasury?: XrplTreasuryConfigInput;
@@ -569,7 +583,27 @@ export interface PaywallRouteConfig {
     scheme?: 'exact' | 'wormhole-ntt-transfer';
   };
   mpp?: { currency?: string; recipient?: string };
-  xrpl?: { payTo: string; asset?: string; network?: string };
+  /**
+   * v0.28: XRPL x402 paywall route — canonical T54 spec.
+   * The merchant emits PAYMENT-REQUIRED, the buyer presigns a Payment with
+   * SourceTag + MemoData=hex(invoiceId) + LastLedgerSequence, and a facilitator
+   * (T54-hosted by default) does verify+settle.
+   */
+  xrpl?: {
+    payTo: string;
+    /** 'XRP' or 'RLUSD' — RLUSD canonicalised to its 40-hex code on the wire. @default 'RLUSD' */
+    asset?: 'XRP' | 'RLUSD';
+    /** CAIP-2 network ID. @default 'xrpl:1' (testnet) */
+    network?: 'xrpl:0' | 'xrpl:1' | 'xrpl:2';
+    /** Override facilitator base URL. @default T54 hosted (per network). */
+    facilitatorUrl?: string;
+    /** SourceTag stamp. @default 804681468 (T54 indexer). */
+    sourceTag?: number;
+    /** Optional invoiceId pin (e.g. when the route already issued one). Default: per-request UUIDv4. */
+    invoiceId?: string;
+    /** Optional human-readable resource description echoed in the challenge. */
+    description?: string;
+  };
   /**
    * Morph paywall route. `scheme` defaults to 'exact' (Morph mainnet direct transfer).
    * Set `scheme: 'eip3009'` for sponsored EIP-3009 transferWithAuthorization on Hoodi (v0.18).

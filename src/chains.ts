@@ -99,7 +99,7 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
   },
   'xrpl-testnet': {
     chainId: 0,
-    caip2: 'xrpl:testnet',
+    caip2: 'xrpl:1',
     name: 'XRPL Testnet',
     rpcUrl: 'https://s.altnet.rippletest.net:51234',
     wsUrl: 'wss://s.altnet.rippletest.net:51233',
@@ -109,7 +109,7 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
   },
   'xrpl-mainnet': {
     chainId: 0,
-    caip2: 'xrpl:mainnet',
+    caip2: 'xrpl:0',
     name: 'XRPL Mainnet',
     rpcUrl: 'https://xrplcluster.com',
     wsUrl: 'wss://xrplcluster.com',

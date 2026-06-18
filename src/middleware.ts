@@ -1,6 +1,16 @@
 import { CHAINS } from './chains.js';
 import type { PaywallConfig, PaywallRouteConfig } from './types.js';
 import { buildFlareX402Challenge, decodeFlareX402Header, verifyAndSettleFlareX402 } from './flare/x402.js';
+import {
+  decodePaymentSignatureHeader,
+  defaultFacilitatorUrl,
+  encodePaymentRequiredHeader,
+  encodePaymentResponseHeader,
+  XrplFacilitatorClient,
+  type XrplPaymentRequirements,
+} from './xrpl/x402-scheme.js';
+import { getRlusdIssuer, parseCaip2, RLUSD_HEX, DEFAULT_SOURCE_TAG } from './xrpl/utils.js';
+import { NPaymentError } from './errors.js';
 import type { Address, PublicClient, WalletClient } from 'viem';
 
 type Req = { method: string; path: string; headers: Record<string, any>; hostname?: string };
@@ -89,6 +99,12 @@ export function createPaywall(config: PaywallConfig, flareDeps?: FlareMerchantDe
       return;
     }
 
+    // ── v0.28: XRPL x402 (T54 canonical) — owns the request when route.xrpl is set ─
+    if (route.xrpl) {
+      handleXrplRoute(req, res, next, route);
+      return;
+    }
+
     // ── Check x402 payment ──────────────────────────────────────────────
     if ((req.headers['payment-signature'] || req.headers['x-payment-tx']) && route.x402) {
       // Verify payment via facilitator if configured
@@ -109,11 +125,6 @@ export function createPaywall(config: PaywallConfig, flareDeps?: FlareMerchantDe
     // ── Check MPP payment (Authorization: Payment <credential>) ─────────
     const authHeader = req.headers['authorization'] as string | undefined;
     if (authHeader?.startsWith('Payment ') && route.mpp) {
-      return next();
-    }
-
-    // ── Check XRPL payment ──────────────────────────────────────────────
-    if (req.headers['x-payment-tx'] && req.headers['x-payment-network'] === 'xrpl' && route.xrpl) {
       return next();
     }
 
@@ -156,18 +167,7 @@ export function createPaywall(config: PaywallConfig, flareDeps?: FlareMerchantDe
       );
     }
 
-    if (route.xrpl) {
-      const network = route.xrpl.network ?? 'xrpl:testnet';
-      const challenge = Buffer.from(JSON.stringify({
-        x402Version: 2,
-        accepts: [{ scheme: 'exact', network, maxAmountRequired: route.price, asset: route.xrpl.asset ?? 'RLUSD', payTo: route.xrpl.payTo }],
-      })).toString('base64');
-      res.setHeader('x-xrpl-payment-required', challenge);
-      // Also set payment-required for unified detection
-      if (!route.x402) res.setHeader('payment-required', challenge);
-    }
-
-    const protocols = [route.x402 && !route.morph && 'x402', route.mpp && 'mpp', route.xrpl && 'xrpl', route.morph && 'morph-x402'].filter(Boolean);
+    const protocols = [route.x402 && !route.morph && 'x402', route.mpp && 'mpp', route.morph && 'morph-x402'].filter(Boolean);
     res.status(402).json({ error: 'Payment required', protocols });
   };
 }
@@ -194,11 +194,221 @@ export async function createMppPaywall(config: { currency: string; recipient: st
   });
 }
 
+// ─── v0.28: XRPL x402 (T54 canonical) merchant handler ──────────────────────
+
+/**
+ * Per-process invoice cache. Maps invoiceId → { route, expiresAt, consumed }.
+ * Replace with Redis / SQLite for prod via the v0.28 idempotency-store interface.
+ */
+interface XrplInvoiceRecord {
+  routeKey: string;
+  expiresAt: number;
+  consumed: boolean;
+}
+const xrplInvoices = new Map<string, XrplInvoiceRecord>();
+const XRPL_INVOICE_TTL_MS = 10 * 60 * 1000; // 10 minutes — the spec's maxTimeoutSeconds default.
+
+/**
+ * Test/operational helper — purge the in-memory invoice cache.
+ * Public so harnesses can guarantee determinism across runs.
+ */
+export function clearXrplInvoiceCache(): void {
+  xrplInvoices.clear();
+}
+
+/** Cached facilitator clients keyed by URL — avoids re-allocating per request. */
+const xrplFacilitators = new Map<string, XrplFacilitatorClient>();
+function getFacilitator(url: string): XrplFacilitatorClient {
+  let c = xrplFacilitators.get(url);
+  if (!c) {
+    c = new XrplFacilitatorClient(url);
+    xrplFacilitators.set(url, c);
+  }
+  return c;
+}
+
+/**
+ * Build the canonical PAYMENT-REQUIRED challenge from a route + a freshly
+ * minted invoiceId. Returns the encoded header value.
+ */
+function buildXrplChallenge(
+  route: PaywallRouteConfig,
+  invoiceId: string,
+): string {
+  const cfg = route.xrpl!;
+  const network = cfg.network ?? 'xrpl:1';
+  const xrplNet = parseCaip2(network);
+  const assetSymbol = cfg.asset ?? 'RLUSD';
+  const requirements: XrplPaymentRequirements = {
+    scheme: 'exact',
+    network,
+    asset: assetSymbol === 'RLUSD' ? RLUSD_HEX : 'XRP',
+    payTo: cfg.payTo,
+    amount: route.price,
+    maxTimeoutSeconds: 600,
+    extra: {
+      sourceTag: cfg.sourceTag ?? DEFAULT_SOURCE_TAG,
+      invoiceId,
+    },
+  };
+  if (assetSymbol === 'RLUSD') {
+    requirements.extra.issuer = getRlusdIssuer(xrplNet);
+  }
+  return encodePaymentRequiredHeader({ x402Version: 2, accepts: [requirements] });
+}
+
+/**
+ * Owns the request when `route.xrpl` is set. Two paths:
+ *
+ *   1. PAYMENT-SIGNATURE header present → decode → check invoice cache →
+ *      facilitator.verify → facilitator.settle → set PAYMENT-RESPONSE → next().
+ *   2. No header → mint invoiceId → emit PAYMENT-REQUIRED → 402.
+ *
+ * Errors short-circuit to 402 with `{ error, reason }` so buyers can retry.
+ */
+function handleXrplRoute(req: Req, res: Res, next: Next, route: PaywallRouteConfig): void {
+  const cfg = route.xrpl!;
+  const sigHeader =
+    (req.headers['payment-signature'] as string | undefined) ??
+    (req.headers['PAYMENT-SIGNATURE'] as string | undefined);
+
+  // Path 1: settlement attempt.
+  if (sigHeader) {
+    void settleXrplPayment(req, res, next, route, sigHeader).catch((err) => {
+      // Defensive — settleXrplPayment itself catches and 402s; this is
+      // only for genuinely unexpected throws.
+      res.status(500).json({ error: 'Internal facilitator error', reason: (err as Error).message });
+    });
+    return;
+  }
+
+  // Path 2: emit canonical PAYMENT-REQUIRED challenge.
+  const invoiceId = cfg.invoiceId ?? randomInvoiceId();
+  const routeKey = `${req.method} ${req.path}`;
+  xrplInvoices.set(invoiceId, {
+    routeKey,
+    expiresAt: Date.now() + XRPL_INVOICE_TTL_MS,
+    consumed: false,
+  });
+  const challenge = buildXrplChallenge(route, invoiceId);
+  res.setHeader('PAYMENT-REQUIRED', challenge);
+  res.status(402).json({
+    error: 'Payment required',
+    protocols: ['xrpl-x402'],
+    description: cfg.description ?? route.description,
+    invoiceId,
+  });
+}
+
+async function settleXrplPayment(
+  req: Req,
+  res: Res,
+  next: Next,
+  route: PaywallRouteConfig,
+  sigHeader: string,
+): Promise<void> {
+  const cfg = route.xrpl!;
+  const xrplNet = parseCaip2(cfg.network ?? 'xrpl:1');
+  const facilitatorUrl = cfg.facilitatorUrl ?? defaultFacilitatorUrl(xrplNet);
+
+  // 1. Decode the buyer's PAYMENT-SIGNATURE.
+  let envelope;
+  try {
+    envelope = decodePaymentSignatureHeader(sigHeader);
+  } catch (err) {
+    res.status(402).json({ error: 'invalid_signature', reason: (err as NPaymentError).message });
+    return;
+  }
+  const accepted = envelope.accepted;
+
+  // 2. Bind to outstanding invoice — the buyer echoes the same invoiceId
+  //    we issued in the challenge. Reject unknown / consumed / expired.
+  const invoice = xrplInvoices.get(accepted.extra.invoiceId);
+  if (!invoice) {
+    res.status(402).json({ error: 'unknown_invoice' });
+    return;
+  }
+  if (invoice.consumed) {
+    res.status(402).json({ error: 'invoice_already_consumed' });
+    return;
+  }
+  if (invoice.expiresAt < Date.now()) {
+    xrplInvoices.delete(accepted.extra.invoiceId);
+    res.status(402).json({ error: 'invoice_expired' });
+    return;
+  }
+  if (invoice.routeKey !== `${req.method} ${req.path}`) {
+    res.status(402).json({ error: 'invoice_route_mismatch' });
+    return;
+  }
+  // Cheap shape sanity — payTo / amount / network / asset must echo the
+  // route's challenge contract before we burn a facilitator round-trip.
+  const expectedAsset = (cfg.asset ?? 'RLUSD') === 'RLUSD' ? RLUSD_HEX : 'XRP';
+  if (
+    accepted.payTo !== cfg.payTo ||
+    accepted.amount !== route.price ||
+    accepted.network !== (cfg.network ?? 'xrpl:1') ||
+    accepted.asset !== expectedAsset
+  ) {
+    res.status(402).json({ error: 'requirements_mismatch' });
+    return;
+  }
+
+  // 3. Facilitator: verify, then settle.
+  const fac = getFacilitator(facilitatorUrl);
+  let v;
+  try {
+    v = await fac.verify({ paymentPayload: envelope, paymentRequirements: accepted });
+  } catch (err) {
+    res.status(402).json({ error: 'verify_failed', reason: (err as NPaymentError).message });
+    return;
+  }
+  if (!v.isValid) {
+    res.status(402).json({ error: 'verify_invalid', reason: v.invalidReason });
+    return;
+  }
+
+  let s;
+  try {
+    s = await fac.settle({ paymentPayload: envelope, paymentRequirements: accepted });
+  } catch (err) {
+    res.status(402).json({ error: 'settle_failed', reason: (err as NPaymentError).message });
+    return;
+  }
+  if (!s.success) {
+    res.status(402).json({ error: 'settle_invalid', reason: s.errorReason });
+    return;
+  }
+
+  // 4. Mark consumed + emit PAYMENT-RESPONSE then hand off to the route.
+  invoice.consumed = true;
+  res.setHeader(
+    'PAYMENT-RESPONSE',
+    encodePaymentResponseHeader({
+      success: true,
+      transaction: s.transaction,
+      network: accepted.network,
+      payer: s.payer ?? v.payer,
+    }),
+  );
+  next();
+}
+
+/** UUIDv4-style invoice id (no extra dep — uses crypto.getRandomValues). */
+function randomInvoiceId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex: string[] = [];
+  for (const b of bytes) hex.push(b.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+}
+
 /**
  * Health endpoint that returns pricing info for all configured routes.
  */
-export function createHealthEndpoint(config: PaywallConfig) {
-  return (_req: Req, res: Res) => {
+export function createHealthEndpoint(config: PaywallConfig) {  return (_req: Req, res: Res) => {
     const routes = Object.entries(config.routes).map(([route, cfg]) => ({
       route,
       price: cfg.price,

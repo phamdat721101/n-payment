@@ -3,31 +3,59 @@ import type { XrplWallet } from '../xrpl/wallet.js';
 import type { XrplConnection } from '../xrpl/connection.js';
 import type { XrplSwapClient } from '../xrpl/swap.js';
 import type { XrplTreasuryManager } from '../xrpl/treasury.js';
-import { ensureTrustLine, sendRLUSD, readAccountState } from '../xrpl/payments.js';
-import { getRlusdIssuer, parseRlusdAmount, formatRlusdAmount, type XrplNetwork } from '../xrpl/utils.js';
+import {
+  ensureTrustLine,
+  readAccountState,
+  buildXrplRlusdPaymentTx,
+  invalidateAccountState,
+} from '../xrpl/payments.js';
+import {
+  DEFAULT_SOURCE_TAG,
+  formatRlusdAmount,
+  getRlusdIssuer,
+  parseCaip2,
+  parseRlusdAmount,
+  RLUSD_HEX,
+  toCaip2,
+  type XrplNetwork,
+} from '../xrpl/utils.js';
+import {
+  decodePaymentRequiredHeader,
+  encodePaymentSignatureHeader,
+  type XrplPaymentRequirements,
+} from '../xrpl/x402-scheme.js';
 import { NPaymentError } from '../errors.js';
 
 export interface XrplAdapterOptions {
+  /** Auto-swap XRP→RLUSD when the buyer is short. @default false */
   autoSwap?: boolean;
+  /** Max acceptable slippage on auto-swap, in bps. @default 100 (1%) */
   maxSlippageBps?: number;
-}
-
-interface PaywallChallenge {
-  payTo: string;
-  amount: string;
-  network: string;
+  /** Override the SourceTag stamped on every Payment. @default 804681468 (T54 indexer). */
+  sourceTag?: number;
 }
 
 /**
- * v0.14 XRPL 402 adapter.
+ * XRPL x402 adapter — canonical T54 / xrpl.org spec.
  *
- * Sequence (per-wallet serialised):
- *   ensureTrustLine → readAccountState → (treasury.ensureLiquid) →
- *   (swap if still short) → sendRLUSD → schedule sweep → retry HTTP
+ * Wire format (https://xrpl-x402.t54.ai/docs/xrpl-scheme):
+ *   server  → client : PAYMENT-REQUIRED   (base64-JSON challenge)
+ *   client  → server : PAYMENT-SIGNATURE  (base64-JSON {accepted, payload.signedTxBlob})
+ *   server  → client : PAYMENT-RESPONSE   (base64-JSON settlement record)
+ *
+ * The buyer never submits the tx itself; it presigns a Payment with
+ * {SourceTag, MemoData=hex(invoiceId), LastLedgerSequence}, and the merchant's
+ * facilitator does verify+settle.
+ *
+ * Sequence (per-wallet serialised by an address mutex):
+ *   ensureTrustLine → readAccountState → (treasury rescue) → (swap rescue) →
+ *   buildXrplRlusdPaymentTx → wallet.sign → PAYMENT-SIGNATURE retry.
+ *
+ * RLUSD-first: XRP-asset challenges throw `XRPL_X402_XRP_PENDING` (follow-up).
  */
 export class XrplAdapter implements PaymentAdapter {
   readonly protocol = 'xrpl';
-  /** Per-address mutex — fixes Gstack Q2 (concurrent double-swap). */
+  /** Per-address mutex — prevents concurrent double-swap on parallel calls. */
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -40,12 +68,18 @@ export class XrplAdapter implements PaymentAdapter {
   ) {}
 
   detect(response: Response): boolean {
-    const header = response.headers.get('payment-required') ?? '';
+    const header = readHeader(response.headers, 'PAYMENT-REQUIRED');
     if (!header) return false;
     try {
-      const decoded = JSON.parse(Buffer.from(header, 'base64').toString());
-      return decoded.accepts?.[0]?.network?.startsWith('xrpl:') ?? false;
-    } catch { return false; }
+      const env = decodePaymentRequiredHeader(header);
+      const a = env.accepts[0];
+      // Only handle XRPL networks; only accept XRP or RLUSD asset references.
+      if (!a.network.startsWith('xrpl:')) return false;
+      const asset = a.asset.toUpperCase();
+      return asset === 'XRP' || asset === 'RLUSD' || asset === RLUSD_HEX;
+    } catch {
+      return false;
+    }
   }
 
   async pay(url: string, init: RequestInit | undefined, response: Response, ctx?: PaymentContext): Promise<Response> {
@@ -53,17 +87,17 @@ export class XrplAdapter implements PaymentAdapter {
     const previous = this.locks.get(address) ?? Promise.resolve();
     const work = previous.then(
       () => this.payLocked(url, init, response, ctx),
-      // Don't propagate prior errors into our slot.
       () => this.payLocked(url, init, response, ctx),
     );
     this.locks.set(address, work);
     try {
       return (await work) as Response;
     } finally {
-      // Drop the slot only if we're still the head.
       if (this.locks.get(address) === work) this.locks.delete(address);
     }
   }
+
+  // ─── Locked critical section ───────────────────────────────────────────────
 
   private async payLocked(
     url: string,
@@ -71,89 +105,119 @@ export class XrplAdapter implements PaymentAdapter {
     response: Response,
     _ctx?: PaymentContext,
   ): Promise<Response> {
-    const challenge = this.parseChallenge(response);
-    const issuer = getRlusdIssuer(this.network);
-    const address = await this.wallet.getAddress();
+    const accepted = this.parseChallenge(response);
 
+    // RLUSD-first: XRP path is scaffolded for the follow-up PR.
+    if (accepted.asset === 'XRP') {
+      throw new NPaymentError(
+        'XRP-asset XRPL x402 not yet supported (RLUSD-first).',
+        'XRPL_X402_XRP_PENDING',
+        'Use an RLUSD-priced endpoint, or wait for the XRP-drops follow-up.',
+      );
+    }
+
+    const issuer = accepted.extra.issuer ?? getRlusdIssuer(this.network);
+    const fromAddress = await this.wallet.getAddress();
+
+    // 1. Trust line (idempotent — no-op when already set).
     await ensureTrustLine(this.connection, this.wallet, { issuer });
 
-    let state = await readAccountState(this.connection, address, { issuer });
-    const need = parseRlusdAmount(challenge.amount);
+    // 2. Read balance once; rescue (treasury then swap) if short.
+    let state = await readAccountState(this.connection, fromAddress, { issuer });
+    const need = parseRlusdAmount(accepted.amount);
 
-    // 1. Treasury rescue (when configured).
     if (this.treasury?.isEnabled() && parseRlusdAmount(state.rlusdBalance) < need) {
       try {
-        await this.treasury.ensureLiquid(challenge.amount);
-        state = await readAccountState(this.connection, address, { issuer, fresh: true });
+        await this.treasury.ensureLiquid(accepted.amount);
+        state = await readAccountState(this.connection, fromAddress, { issuer, fresh: true });
       } catch (err) {
         if (!this.options.autoSwap) throw err;
-        // else fall through to swap rescue
       }
     }
 
-    // 2. Swap rescue (when configured).
-    let liquidUnits = parseRlusdAmount(state.rlusdBalance);
-    if (liquidUnits < need) {
+    if (parseRlusdAmount(state.rlusdBalance) < need) {
       if (!this.options.autoSwap || !this.swap) {
         throw new NPaymentError(
-          `Insufficient RLUSD: have ${formatRlusdAmount(liquidUnits)}, need ${challenge.amount}`,
+          `Insufficient RLUSD: have ${formatRlusdAmount(parseRlusdAmount(state.rlusdBalance))}, need ${accepted.amount}`,
           'XRPL_INSUFFICIENT_BALANCE',
           'Enable xrpl.autoSwap or pre-fund the wallet with RLUSD.',
         );
       }
-      const shortfall = formatRlusdAmount(need - liquidUnits);
-      const intentId = makeIntentId();
-      console.info(
-        `[n-payment][xrpl] swap intent ${intentId}: XRP→${shortfall} RLUSD ` +
-        `(network=${this.network}, payTo=${challenge.payTo})`,
-      );
-      try {
-        await this.swap.swap({
-          from: 'XRP',
-          to: 'RLUSD',
-          amountOut: shortfall,
-          maxSlippageBps: this.options.maxSlippageBps ?? 100,
-        });
-      } catch (err) {
-        // Re-throw with intent ID for operational tracing (Q3 idempotency log).
-        if (err instanceof NPaymentError) throw err;
-        throw new NPaymentError(
-          `Swap failed (intent ${intentId}): ${(err as Error).message}`,
-          'XRPL_SWAP_FAILED',
-          'Re-call fetchWithPayment to retry; the intent ID is logged.',
-        );
-      }
+      const shortfall = formatRlusdAmount(need - parseRlusdAmount(state.rlusdBalance));
+      await this.swap.swap({
+        from: 'XRP',
+        to: 'RLUSD',
+        amountOut: shortfall,
+        maxSlippageBps: this.options.maxSlippageBps ?? 100,
+      });
+      // Invalidate cached state so subsequent (queued) calls see the new balance.
+      invalidateAccountState(fromAddress);
     }
 
-    // 3. Settle paywall.
-    const { hash } = await sendRLUSD(this.connection, this.wallet, challenge.payTo, challenge.amount, { issuer });
+    // 3. Build presigned Payment + sign.
+    const tx = await buildXrplRlusdPaymentTx(this.connection, {
+      fromAddress,
+      payTo: accepted.payTo,
+      amount: accepted.amount,
+      issuer,
+      invoiceId: accepted.extra.invoiceId,
+      sourceTag: this.options.sourceTag ?? accepted.extra.sourceTag ?? DEFAULT_SOURCE_TAG,
+      destinationTag: accepted.extra.destinationTag,
+    });
+    const signed = await this.wallet.sign(tx);
+    if (!signed.tx_blob) {
+      throw new NPaymentError(
+        'Wallet did not return a signed tx_blob',
+        'XRPL_SIGN_FAILED',
+        'OWS-only signers must produce a tx_blob; use seed-mode for the buyer flow.',
+      );
+    }
 
-    // 4. Retry HTTP with payment proof.
+    // 4. Retry HTTP with canonical PAYMENT-SIGNATURE header.
+    const sigHeader = encodePaymentSignatureHeader({
+      x402Version: 2,
+      accepted,
+      payload: { signedTxBlob: signed.tx_blob },
+    });
     const retryHeaders = new Headers(init?.headers);
-    retryHeaders.set('x-payment-tx', hash);
-    retryHeaders.set('x-payment-network', `xrpl:${this.network}`);
+    retryHeaders.set('PAYMENT-SIGNATURE', sigHeader);
     const finalResponse = await fetch(url, { ...init, headers: retryHeaders });
 
-    // 5. Fire-and-forget sweep — non-blocking, debounced inside treasury.
+    // 5. Fire-and-forget treasury sweep (debounced inside the manager).
     this.treasury?.scheduleSweep();
 
     return finalResponse;
   }
 
-  private parseChallenge(response: Response): PaywallChallenge {
-    const header = response.headers.get('payment-required') ?? '';
-    const decoded = JSON.parse(Buffer.from(header, 'base64').toString());
-    const accepts = decoded.accepts?.[0] ?? {};
-    const payTo = accepts.payTo;
-    if (!payTo) throw new NPaymentError('No payTo in XRPL payment challenge', 'XRPL_MISSING_PAY_TO');
-    return {
-      payTo,
-      amount: accepts.maxAmountRequired ?? '1',
-      network: accepts.network ?? `xrpl:${this.network}`,
-    };
+  // ─── Challenge parsing ─────────────────────────────────────────────────────
+
+  private parseChallenge(response: Response): XrplPaymentRequirements {
+    const header = readHeader(response.headers, 'PAYMENT-REQUIRED');
+    if (!header) {
+      throw new NPaymentError('Missing PAYMENT-REQUIRED header', 'XRPL_X402_MISSING_HEADER');
+    }
+    const env = decodePaymentRequiredHeader(header);
+    const a = { ...env.accepts[0] };
+
+    // Asset normalisation — accept the soft "RLUSD" symbol but echo the
+    // canonical 40-hex code in the PAYMENT-SIGNATURE.accepted body.
+    if (a.asset === 'RLUSD') a.asset = RLUSD_HEX;
+
+    // Network sanity — fail fast if the merchant advertises a different
+    // CAIP-2 than the adapter is configured for.
+    const challengeNetwork = parseCaip2(a.network);
+    if (challengeNetwork !== this.network) {
+      throw new NPaymentError(
+        `Network mismatch: adapter=${toCaip2(this.network)}, challenge=${a.network}`,
+        'XRPL_X402_NETWORK_MISMATCH',
+        'Configure the adapter for the same XRPL network the merchant is on.',
+      );
+    }
+    return a;
   }
 }
 
-function makeIntentId(): string {
-  return `swap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+/** Case-insensitive header read (Node's Headers preserves case but the spec is uppercase). */
+function readHeader(headers: Headers, name: string): string | null {
+  return headers.get(name) ?? headers.get(name.toLowerCase()) ?? null;
 }

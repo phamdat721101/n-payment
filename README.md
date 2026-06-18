@@ -385,7 +385,7 @@ app.get('/skill', gate.middleware(), (_req, res) => res.json({ data: 'gated' }))
 | --------- | ------------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------- |
 | EVM       | Base, Arbitrum, BNB, Optimism, Ink, Unichain, Ethereum, GOAT, Morph, SpaceRouter chains, Flare, Songbird, Coston2, fee-abstracted L2s | `x402`, MPP, EIP-3009 sponsored, EIP-2612 permit, Permit2, fee-currency adapters | gas sponsoring, gasless payments, yield treasury  |
 | Cosmos-SDK| Initia (and any `cosmos:*` namespace OWS supports)           | `cosmos-msgsend`                                                     | USDC→native-stable bridge corridor                |
-| XRPL      | XRPL mainnet/testnet                                         | XRPL native, RLUSD payments, payment channels                        | XRP↔stablecoin AMM auto-swap, vault treasury      |
+| XRPL      | XRPL mainnet/testnet                                         | XRPL native, x402 (T54 / RLUSD-first), RLUSD payments, payment channels | invoice-bound presigned blobs settled via T54 facilitator; XRP↔RLUSD AMM auto-swap; vault treasury |
 | Stellar   | Stellar mainnet/testnet                                      | x402, MPP, MPP Session (Soroban payment channels)                    | sub-cent off-chain commitments, multi-stable swap |
 | Solana    | Solana mainnet/devnet                                        | x402                                                                 | SPL transfers                                     |
 | Cross-chain | Any pair the corridor solver can connect                    | Wormhole NTT, LayerZero V2 OFT, Skip API, Mento                       | bridge-as-payment, atomic mint-and-pay            |
@@ -454,7 +454,7 @@ createPaymentClient({
 
   // Treasury / corridors (all optional — opt in only what you need)
   aave:        { autoYield, minIdleBalance, borrowEnabled, preferGho, delegation },
-  xrpl:        { seed, autoSwap, treasury },
+  xrpl:        { seed, autoSwap, treasury, facilitatorUrl, sourceTag },
   stellar:     { secretKey, channelsApiKey },
   solana:      { keypair },
   morph:       { accessKey, secretKey, facilitatorUrl },

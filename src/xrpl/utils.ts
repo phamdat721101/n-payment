@@ -15,6 +15,24 @@ export const RLUSD_ISSUERS: Readonly<Record<XrplNetwork, string>> = Object.freez
 });
 
 export const RLUSD_CURRENCY = 'RLUSD' as const;
+/**
+ * Canonical 40-hex XRPL currency code for RLUSD. The XRPL exact x402 scheme
+ * (T54 reference impl) uses this in `accepts[].asset`; the human-readable
+ * "RLUSD" symbol is accepted only when explicitly converted by the caller.
+ *
+ * Source: https://xrpl-x402.t54.ai/docs/xrpl-scheme#asset-types
+ */
+export const RLUSD_HEX = '524C555344000000000000000000000000000000' as const;
+
+/**
+ * Default XRPL `SourceTag` stamped on x402 Payment transactions. Used by
+ * T54's `x402scan` indexer to identify x402 traffic on-chain. Override per
+ * route via `route.xrpl.sourceTag` or globally via `xrpl.sourceTag`.
+ *
+ * Source: https://xrpl-x402.t54.ai/docs/xrpl-scheme#requirements-fields
+ */
+export const DEFAULT_SOURCE_TAG = 804681468 as const;
+
 /** RLUSD has 6 decimal places on XRPL (matches XRP drops scale). */
 export const RLUSD_DECIMALS = 6 as const;
 const RLUSD_SCALE = 1_000_000n; // 10 ** RLUSD_DECIMALS
@@ -27,6 +45,58 @@ export function getRlusdIssuer(network: XrplNetwork): string {
 /** Map a chain key to an XRPL network. Returns 'testnet' for unknown keys (safer default). */
 export function networkFromChainKey(chainKey: string): XrplNetwork {
   return chainKey === 'xrpl-mainnet' ? 'mainnet' : 'testnet';
+}
+
+// ─── CAIP-2 helpers (T54 / x402 v2) ──────────────────────────────────────────
+
+/** CAIP-2 network ID per the XRPL x402 spec: xrpl:0 = mainnet, xrpl:1 = testnet, xrpl:2 = devnet. */
+export type XrplCaip2 = 'xrpl:0' | 'xrpl:1' | 'xrpl:2';
+
+const CAIP2_BY_NETWORK: Readonly<Record<XrplNetwork, XrplCaip2>> = Object.freeze({
+  mainnet: 'xrpl:0',
+  testnet: 'xrpl:1',
+});
+
+/** XrplNetwork → CAIP-2 ID. */
+export function toCaip2(network: XrplNetwork): XrplCaip2 {
+  return CAIP2_BY_NETWORK[network];
+}
+
+/**
+ * CAIP-2 ID → XrplNetwork. Throws on unknown values.
+ * Devnet (`xrpl:2`) currently maps to 'testnet' since n-payment registry has no devnet entry.
+ */
+export function parseCaip2(caip2: string): XrplNetwork {
+  switch (caip2) {
+    case 'xrpl:0':
+      return 'mainnet';
+    case 'xrpl:1':
+      return 'testnet';
+    case 'xrpl:2':
+      return 'testnet';
+    default:
+      throw new NPaymentError(
+        `Unsupported XRPL CAIP-2 network: ${JSON.stringify(caip2)}`,
+        'XRPL_INVALID_NETWORK',
+        'Use xrpl:0 (mainnet), xrpl:1 (testnet), or xrpl:2 (devnet).',
+      );
+  }
+}
+
+/**
+ * Resolve a "soft" asset reference to the canonical XRPL form used by the
+ * exact scheme: `'XRP'` stays `'XRP'`; `'RLUSD'` is upgraded to its 40-hex
+ * code; an already-hex code passes through unchanged.
+ */
+export function resolveCanonicalAsset(asset: string): string {
+  if (asset === 'XRP') return 'XRP';
+  if (asset === 'RLUSD') return RLUSD_HEX;
+  if (/^[0-9A-F]{40}$/i.test(asset)) return asset.toUpperCase();
+  throw new NPaymentError(
+    `Unknown XRPL asset reference: ${JSON.stringify(asset)}`,
+    'XRPL_INVALID_ASSET',
+    'Use "XRP", "RLUSD", or a 40-hex XRPL currency code.',
+  );
 }
 
 // ─── RLUSD Amount Parsing (strict, no scientific notation) ───────────────────

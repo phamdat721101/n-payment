@@ -149,6 +149,7 @@ export class PaymentClient {
           new XrplAdapter(xrplWallet, xrplConn, network, xrplSwap, treasury, {
             autoSwap: xrplCfg?.autoSwap,
             maxSlippageBps: xrplCfg?.maxSlippageBps,
+            sourceTag: xrplCfg?.sourceTag,
           }),
         );
       } else if (xrplCfg?.strict) {

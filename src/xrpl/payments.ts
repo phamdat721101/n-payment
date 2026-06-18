@@ -1,6 +1,8 @@
 import type { XrplWallet } from './wallet.js';
 import type { XrplConnection } from './connection.js';
-import { RLUSD_CURRENCY } from './utils.js';
+import { DEFAULT_SOURCE_TAG, RLUSD_CURRENCY } from './utils.js';
+import { hexInvoiceMemo } from './x402-scheme.js';
+import { NPaymentError } from '../errors.js';
 
 // ─── Shared types ────────────────────────────────────────────────────────────
 
@@ -163,4 +165,88 @@ export function invalidateAccountState(address: string): void {
   for (const key of stateCache.keys()) {
     if (key.startsWith(prefix)) stateCache.delete(key);
   }
+}
+
+// ─── X402 — presigned RLUSD Payment builder (T54 exact scheme) ───────────────
+
+/** Default LastLedgerSequence lookahead in ledgers (~80s at 4s closes). */
+const DEFAULT_LAST_LEDGER_OFFSET = 20;
+
+export interface BuildRlusdPaymentTxOpts {
+  /** Buyer (signer) classic address. */
+  fromAddress: string;
+  /** Merchant classic address from the challenge. */
+  payTo: string;
+  /** Decimal RLUSD amount string (e.g. "0.01"). */
+  amount: string;
+  /** RLUSD issuer for the target network. */
+  issuer: string;
+  /** Invoice ID — bound into MemoData (hex(UTF-8(invoiceId))). */
+  invoiceId: string;
+  /** SourceTag stamp. @default DEFAULT_SOURCE_TAG (T54 indexer tag). */
+  sourceTag?: number;
+  /** Optional XRPL DestinationTag echoed from challenge.extra.destinationTag. */
+  destinationTag?: number;
+  /** LastLedgerSequence padding (in ledgers) past current. @default 20 (~80s). */
+  lastLedgerOffset?: number;
+}
+
+/**
+ * Build a *ready-to-sign* XRPL `Payment` transaction that satisfies the T54
+ * exact-scheme verifier:
+ *
+ *   - TransactionType=Payment, IOU Amount with currency+issuer+value
+ *   - SourceTag (default 804681468) so x402scan indexes it
+ *   - Memos[0].MemoData = hex(UTF-8(invoiceId)) for invoice binding
+ *   - LastLedgerSequence set to current+offset for bounded expiry
+ *
+ * No I/O beyond `connection.autofill` (single round-trip). The caller is
+ * responsible for `wallet.sign(tx)` to produce the `signedTxBlob`.
+ *
+ * SOLID — SRP: builds one tx; no HTTP, no wire format, no signing.
+ */
+export async function buildXrplRlusdPaymentTx(
+  connection: XrplConnection,
+  opts: BuildRlusdPaymentTxOpts,
+): Promise<Record<string, unknown>> {
+  const {
+    fromAddress,
+    payTo,
+    amount,
+    issuer,
+    invoiceId,
+    sourceTag = DEFAULT_SOURCE_TAG,
+    destinationTag,
+    lastLedgerOffset = DEFAULT_LAST_LEDGER_OFFSET,
+  } = opts;
+
+  if (!fromAddress?.startsWith('r')) throw bad('fromAddress must be an XRPL classic address');
+  if (!payTo?.startsWith('r')) throw bad('payTo must be an XRPL classic address');
+  if (!issuer?.startsWith('r')) throw bad('issuer must be an XRPL classic address');
+  if (!amount) throw bad('amount required');
+
+  const memo = hexInvoiceMemo(invoiceId); // throws on oversize / empty
+
+  const draft: Record<string, unknown> = {
+    TransactionType: 'Payment',
+    Account: fromAddress,
+    Destination: payTo,
+    Amount: { currency: RLUSD_CURRENCY, issuer, value: amount },
+    SourceTag: sourceTag,
+    Memos: [memo],
+  };
+  if (typeof destinationTag === 'number') draft.DestinationTag = destinationTag;
+
+  const client = await connection.getClient();
+  // `autofill` populates Sequence, Fee, and LastLedgerSequence from the
+  // connected ledger. We then extend LastLedgerSequence by `lastLedgerOffset`
+  // so the facilitator has time to submit before expiry.
+  const filled: Record<string, unknown> = await client.autofill(draft);
+  const baseLls = (filled.LastLedgerSequence as number | undefined) ?? 0;
+  filled.LastLedgerSequence = baseLls + lastLedgerOffset;
+  return filled;
+}
+
+function bad(msg: string): NPaymentError {
+  return new NPaymentError(`Invalid XRPL Payment input: ${msg}`, 'XRPL_INVALID_PAYMENT_INPUT');
 }
