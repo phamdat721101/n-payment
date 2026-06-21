@@ -366,6 +366,23 @@ Add an MPP block to the same route to accept both protocols at once:
 }
 ```
 
+### Receive RLUSD on XRPL with auto-trustline
+
+Add an `xrpl` block to a route to accept RLUSD via the [T54 facilitator](https://www.t54.ai/docs/xrpl/x402-facilitator) on testnet (`xrpl:1`) or mainnet (`xrpl:0`). Setting `config.xrpl.seed` (or `.owsWallet`) lets the SDK auto-create the receiver's RLUSD trustline on the first 402 — useful on testnet and for demos. Omit it for production fail-fast mode (paywall returns `503 XRPL_MERCHANT_NO_TRUSTLINE` until the trustline is pre-created).
+
+```typescript
+app.use(createPaywall({
+  routes: {
+    'GET /paid': {
+      price: '0.01', // 0.01 RLUSD
+      xrpl:  { payTo: 'rYourReceiverAddress', network: 'xrpl:1', asset: 'RLUSD' },
+    },
+  },
+  // optional: enables one-time TrustSet on first call
+  xrpl: { seed: process.env.XRPL_RECEIVER_SEED },
+}));
+```
+
 Need finer-grained access control? Compose the paywall with a KYA / KYC gate:
 
 ```typescript

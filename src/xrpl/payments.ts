@@ -20,31 +20,205 @@ export interface IssuerOpts {
 const rlusdAmount = (issuer: string, value: string, currency: string = RLUSD_CURRENCY): RlusdAmount =>
   ({ currency, issuer, value });
 
-// ─── Trust-line bootstrap ────────────────────────────────────────────────────
+// ─── Trust-line bootstrap (unified — buyer & merchant) ─────────────────────
 
+/**
+ * Resolved trust-line state for a single (address, issuer, currency) tuple.
+ * Returned by `ensureTrustline`. Both ok and not-ok states carry an
+ * actionable hint so callers can render a clear 503 or log line.
+ */
+export interface TrustlineState {
+  /** True when the trustline exists on the configured network. */
+  ok: boolean;
+  /** When ok=false, the canonical reason. */
+  reason?: 'missing' | 'frozen' | 'limit_too_low';
+  /** Tx hash of the TrustSet, when this call created the line. */
+  txHash?: string;
+  /** True when the trustline was already present prior to this call. */
+  alreadyExisted?: boolean;
+  /** Operator-facing hint matching `reason`. */
+  hint?: string;
+}
+
+/** Options for `ensureTrustline`. SOLID-DRY: same shape used by buyer + merchant. */
+export interface EnsureTrustlineOpts {
+  /** Address that must own the trustline (buyer self-address OR merchant payTo). */
+  address: string;
+  /** Issuer of the IOU (e.g. RLUSD issuer for the network). */
+  issuer: string;
+  /**
+   * When provided AND the trustline is missing, sign + submit a TrustSet.
+   * `signer.getAddress()` MUST equal `address` — mismatch throws
+   * `XRPL_TRUSTLINE_SIGNER_MISMATCH` (defence-in-depth against accidental
+   * cross-wallet config). Omit to run in fail-fast read-only mode.
+   */
+  signer?: XrplWallet;
+  /** @default RLUSD_CURRENCY */
+  currency?: string;
+  /** TrustSet limit value (decimal string). @default '1000000000' */
+  limit?: string;
+  /** Cache TTL in ms. @default 300_000 (5 min) */
+  cacheTtlMs?: number;
+}
+
+/** Default cache TTL for trustline state. Trustline changes are rare. */
+const TRUSTLINE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface TrustlineCacheEntry { state: TrustlineState; expiresAt: number }
+const trustlineCache = new Map<string, TrustlineCacheEntry>();
+const trustlineLocks = new Map<string, Promise<TrustlineState>>();
+
+const trustlineCacheKey = (address: string, issuer: string, currency: string): string =>
+  `${address}|${issuer}|${currency}`;
+
+/**
+ * Idempotent trustline preflight used by both the buyer adapter and the
+ * merchant paywall middleware. Reads `account_lines` once, caches the result
+ * for ~5 min, and (when a signer is provided) auto-creates the line on miss.
+ *
+ * Behaviour matrix:
+ *
+ *   exists                             → { ok: true, alreadyExisted: true }
+ *   missing + signer (matching addr)   → submits TrustSet, { ok: true, txHash }
+ *   missing + signer (mismatch)        → throws XRPL_TRUSTLINE_SIGNER_MISMATCH
+ *   missing + no signer                → { ok: false, reason: 'missing', hint }
+ *
+ * Concurrency: a per-address mutex coalesces parallel calls so two requests
+ * arriving at the same paywall replica never submit two TrustSet txs.
+ *
+ * SOLID — SRP: this function does one thing (resolve trustline state).
+ *        DIP : depends on the `XrplConnection` + `XrplWallet` interfaces, not
+ *              concrete classes; unit tests inject mocks.
+ */
+export async function ensureTrustline(
+  connection: XrplConnection,
+  opts: EnsureTrustlineOpts,
+): Promise<TrustlineState> {
+  const {
+    address,
+    issuer,
+    signer,
+    currency = RLUSD_CURRENCY,
+    limit = '1000000000',
+    cacheTtlMs = TRUSTLINE_CACHE_TTL_MS,
+  } = opts;
+
+  const cacheKey = trustlineCacheKey(address, issuer, currency);
+  const now = Date.now();
+  const hit = trustlineCache.get(cacheKey);
+  if (hit && hit.expiresAt > now) return hit.state;
+
+  // Coalesce parallel callers on the same key — return the in-flight promise.
+  const inflight = trustlineLocks.get(cacheKey);
+  if (inflight) return inflight;
+
+  const work = (async (): Promise<TrustlineState> => {
+    const client = await connection.getClient();
+    const lines = await client.request({ command: 'account_lines', account: address });
+    const exists = lines.result.lines?.some(
+      (l: { currency: string; account: string }) => l.currency === currency && l.account === issuer,
+    );
+    if (exists) {
+      const state: TrustlineState = { ok: true, alreadyExisted: true };
+      trustlineCache.set(cacheKey, { state, expiresAt: Date.now() + cacheTtlMs });
+      return state;
+    }
+
+    if (!signer) {
+      const state: TrustlineState = {
+        ok: false,
+        reason: 'missing',
+        hint: `Address ${address} has no ${currency} trustline to issuer ${issuer}. ` +
+          'Pass a signer (xrpl.seed/xrpl.owsWallet on createPaywall) to auto-create, ' +
+          'or pre-create the trustline manually.',
+      };
+      // Cache the negative result briefly — operator may pre-create the line.
+      trustlineCache.set(cacheKey, { state, expiresAt: Date.now() + cacheTtlMs });
+      return state;
+    }
+
+    const signerAddress = await signer.getAddress();
+    if (signerAddress !== address) {
+      throw new NPaymentError(
+        `Trustline signer address mismatch: signer=${signerAddress}, expected=${address}`,
+        'XRPL_TRUSTLINE_SIGNER_MISMATCH',
+        'The signer (xrpl.seed/xrpl.owsWallet) must derive the same XRPL classic address as the trustline owner (route.xrpl.payTo or buyer self-address).',
+      );
+    }
+
+    const tx = await client.autofill({
+      TransactionType: 'TrustSet',
+      Account: address,
+      LimitAmount: { currency, issuer, value: limit },
+    });
+    const signed = await signer.sign(tx);
+    if (!signed.tx_blob) {
+      throw new NPaymentError(
+        'TrustSet signer did not return a signed tx_blob',
+        'XRPL_TRUSTLINE_SIGN_FAILED',
+        'OWS-only signers may not yet expose tx_blob for XRPL TrustSet; pre-create the trustline manually.',
+      );
+    }
+    const result = await client.submitAndWait(signed.tx_blob);
+    const txHash = result.result.hash as string | undefined;
+    const state: TrustlineState = { ok: true, txHash };
+    trustlineCache.set(cacheKey, { state, expiresAt: Date.now() + cacheTtlMs });
+    return state;
+  })();
+
+  trustlineLocks.set(cacheKey, work);
+  try {
+    return await work;
+  } finally {
+    if (trustlineLocks.get(cacheKey) === work) trustlineLocks.delete(cacheKey);
+  }
+}
+
+/** Test/operational helper — drop the entire trustline cache. */
+export function clearTrustlineCache(): void { trustlineCache.clear(); }
+
+/**
+ * @internal Test helper — pre-seed the trustline cache for `(address, issuer)`
+ * as `{ ok: true, alreadyExisted: true }`. Lets test files that don't mock the
+ * XRPL connection skip the preflight network round-trip.
+ */
+export function _seedTrustlineCacheOk(
+  address: string,
+  issuer: string,
+  currency: string = RLUSD_CURRENCY,
+): void {
+  trustlineCache.set(trustlineCacheKey(address, issuer, currency), {
+    state: { ok: true, alreadyExisted: true },
+    expiresAt: Date.now() + TRUSTLINE_CACHE_TTL_MS,
+  });
+}
+
+/**
+ * Back-compat wrapper preserving the v0.28 `ensureTrustLine` signature
+ * exported from `src/index.ts`. Delegates to the unified `ensureTrustline`.
+ *
+ * Returned value mirrors the legacy contract:
+ *   - `null` when the trustline already existed
+ *   - the TrustSet tx hash when this call created it
+ *
+ * @deprecated Prefer `ensureTrustline` (returns `TrustlineState`); kept for
+ *             external callers depending on the v0.28 surface.
+ */
 export async function ensureTrustLine(
   connection: XrplConnection,
   wallet: XrplWallet,
   opts: IssuerOpts & { limit?: string },
 ): Promise<string | null> {
-  const { issuer, currency = RLUSD_CURRENCY, limit = '1000000000' } = opts;
-  const client = await connection.getClient();
   const address = await wallet.getAddress();
-
-  const lines = await client.request({ command: 'account_lines', account: address });
-  const exists = lines.result.lines?.some(
-    (l: { currency: string; account: string }) => l.currency === currency && l.account === issuer,
-  );
-  if (exists) return null;
-
-  const tx = await client.autofill({
-    TransactionType: 'TrustSet',
-    Account: address,
-    LimitAmount: { currency, issuer, value: limit },
+  const state = await ensureTrustline(connection, {
+    address,
+    issuer: opts.issuer,
+    signer: wallet,
+    currency: opts.currency,
+    limit: opts.limit,
   });
-  const signed = await wallet.sign(tx);
-  const result = await client.submitAndWait(signed.tx_blob);
-  return result.result.hash;
+  if (state.alreadyExisted) return null;
+  return state.txHash ?? null;
 }
 
 // ─── RLUSD send (Payment) ────────────────────────────────────────────────────

@@ -51,6 +51,12 @@ app.use(
         },
       },
     },
+    // v0.29: optional merchant signer — used only to auto-create the receiver
+    // RLUSD trustline on the first 402. Omit this block to run in fail-fast
+    // mode (the paywall returns 503 with a clear hint until the trustline is
+    // pre-created). Production receivers usually pre-create off-band and
+    // leave this empty.
+    xrpl: { seed: SEED },
   }),
 );
 app.get('/paid', (_req, res) => res.json({ message: 'Hello! Thanks for the 0.01 RLUSD.' }));

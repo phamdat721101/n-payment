@@ -4,7 +4,7 @@ import type { XrplConnection } from '../xrpl/connection.js';
 import type { XrplSwapClient } from '../xrpl/swap.js';
 import type { XrplTreasuryManager } from '../xrpl/treasury.js';
 import {
-  ensureTrustLine,
+  ensureTrustline,
   readAccountState,
   buildXrplRlusdPaymentTx,
   invalidateAccountState,
@@ -119,8 +119,12 @@ export class XrplAdapter implements PaymentAdapter {
     const issuer = accepted.extra.issuer ?? getRlusdIssuer(this.network);
     const fromAddress = await this.wallet.getAddress();
 
-    // 1. Trust line (idempotent — no-op when already set).
-    await ensureTrustLine(this.connection, this.wallet, { issuer });
+    // 1. Trust line (idempotent — cached + mutex-coalesced; sibling to the merchant preflight).
+    await ensureTrustline(this.connection, {
+      address: fromAddress,
+      issuer,
+      signer: this.wallet,
+    });
 
     // 2. Read balance once; rescue (treasury then swap) if short.
     let state = await readAccountState(this.connection, fromAddress, { issuer });

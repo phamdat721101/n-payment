@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
@@ -14,6 +14,7 @@ import {
   type XrplPaymentRequirements,
 } from '../src/xrpl/x402-scheme.js';
 import { DEFAULT_SOURCE_TAG, RLUSD_HEX, RLUSD_ISSUERS } from '../src/xrpl/utils.js';
+import { _seedTrustlineCacheOk, clearTrustlineCache } from '../src/xrpl/payments.js';
 import { NPaymentError } from '../src/errors.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -289,6 +290,16 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
   // We import lazily so we can stub fetch BEFORE the facilitator client cache
   // is populated for any URL. clearXrplInvoiceCache() also keeps tests deterministic.
 
+  // v0.29: trustline preflight runs before challenge issuance + settle. These
+  // legacy tests don't mock the XrplConnection, so we pre-seed the cache for
+  // every payTo + RLUSD-testnet-issuer pair the tests use. This makes preflight
+  // a cache hit (zero network calls) and preserves the existing assertions.
+  beforeEach(() => {
+    clearTrustlineCache();
+    _seedTrustlineCacheOk('rMerchant00000000000000000000000', RLUSD_ISSUERS.testnet);
+    _seedTrustlineCacheOk('rM', RLUSD_ISSUERS.testnet);
+  });
+
   function makeReq(method = 'GET', path = '/paid', headers: Record<string, any> = {}) {
     return { method, path, headers, hostname: 'localhost' };
   }
@@ -329,6 +340,9 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     const res = makeRes();
     let nextCalled = false;
     mw(req as any, res as any, () => { nextCalled = true; });
+
+    // v0.29: trustline preflight is async (cache hit, but still microtask).
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(res._status).toBe(402);
     expect(nextCalled).toBe(false);
@@ -374,6 +388,7 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     // 1. Mint invoice via challenge call.
     const challengeRes = makeRes();
     mw(makeReq('GET', '/paid') as any, challengeRes as any, () => {});
+    await new Promise((r) => setTimeout(r, 0));
     const invoiceId = challengeRes._body.invoiceId as string;
 
     // 2. Buyer crafts a matching PAYMENT-SIGNATURE.
@@ -421,6 +436,7 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     });
     const cRes = makeRes();
     mw(makeReq() as any, cRes as any, () => {});
+    await new Promise((r) => setTimeout(r, 0));
     const invoiceId = cRes._body.invoiceId as string;
 
     const accepted: XrplPaymentRequirements = {
@@ -443,6 +459,7 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     let replayNext = false;
     mw(makeReq('GET', '/paid', { 'payment-signature': sig }) as any, replayRes as any, () => { replayNext = true; });
     await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
     expect(replayNext).toBe(false);
     expect(replayRes._status).toBe(402);
     expect(replayRes._body.error).toBe('invoice_already_consumed');
@@ -459,6 +476,7 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     });
     const cRes = makeRes();
     mw(makeReq() as any, cRes as any, () => {});
+    await new Promise((r) => setTimeout(r, 0));
     const invoiceId = cRes._body.invoiceId as string;
 
     const accepted: XrplPaymentRequirements = {
@@ -471,6 +489,8 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
 
     const r = makeRes();
     mw(makeReq('GET', '/paid', { 'payment-signature': sig }) as any, r as any, () => {});
+    await new Promise((res) => setTimeout(res, 0));
+    await new Promise((res) => setTimeout(res, 0));
     expect(r._status).toBe(402);
     expect(r._body.error).toBe('requirements_mismatch');
     expect(fakeFetch).not.toHaveBeenCalled();
@@ -488,6 +508,7 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     });
     const cRes = makeRes();
     mw(makeReq() as any, cRes as any, () => {});
+    await new Promise((r) => setTimeout(r, 0));
     const invoiceId = cRes._body.invoiceId as string;
 
     const accepted: XrplPaymentRequirements = {
@@ -520,6 +541,8 @@ describe('createPaywall — XRPL x402 (T54 canonical) merchant flow', () => {
     const sig = buildSigEnvelope(accepted);
     const r = makeRes();
     mw(makeReq('GET', '/paid', { 'payment-signature': sig }) as any, r as any, () => {});
+    await new Promise((res) => setTimeout(res, 0));
+    await new Promise((res) => setTimeout(res, 0));
     expect(r._status).toBe(402);
     expect(r._body.error).toBe('unknown_invoice');
   });

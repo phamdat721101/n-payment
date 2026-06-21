@@ -167,9 +167,10 @@ export type { VaultCreateOptions, VaultInfo } from './xrpl/vault.js';
 export { DiaOracleClient } from './xrpl/oracle.js';
 export type { OraclePrice } from './xrpl/oracle.js';
 export {
-  ensureTrustLine, sendRLUSD, getRLUSDBalance, readAccountState, clearAccountStateCache,
+  ensureTrustLine, ensureTrustline, clearTrustlineCache,
+  sendRLUSD, getRLUSDBalance, readAccountState, clearAccountStateCache,
 } from './xrpl/payments.js';
-export type { AccountState, IssuerOpts } from './xrpl/payments.js';
+export type { AccountState, IssuerOpts, TrustlineState, EnsureTrustlineOpts } from './xrpl/payments.js';
 export { XrplAdapter } from './adapters/xrpl.js';
 export type { XrplAdapterOptions } from './adapters/xrpl.js';
 // ─── XRPL v0.14 ─────────────────────────────────────────────────────────────

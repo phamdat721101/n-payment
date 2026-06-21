@@ -1,6 +1,6 @@
 {
   "name": "n-payment",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "Chain-agnostic SDK for agentic payments. One fetchWithPayment(url) call auto-detects HTTP 402 challenges across any supported chain or protocol (x402, MPP, payment channels, on-chain settle, cross-chain corridors), signs with a CAIP-2 multichain wallet, retries with proof — and enforces spend policy, batch + streaming settlement, AP2 verifiable intent, yield-bearing treasury, and paid-MCP server primitives so agents can buy, sell, and earn over HTTP without chain branching in agent code.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

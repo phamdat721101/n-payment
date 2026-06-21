@@ -9,7 +9,10 @@ import {
   XrplFacilitatorClient,
   type XrplPaymentRequirements,
 } from './xrpl/x402-scheme.js';
-import { getRlusdIssuer, parseCaip2, RLUSD_HEX, DEFAULT_SOURCE_TAG } from './xrpl/utils.js';
+import { getRlusdIssuer, parseCaip2, RLUSD_HEX, DEFAULT_SOURCE_TAG, type XrplNetwork } from './xrpl/utils.js';
+import { XrplConnection } from './xrpl/connection.js';
+import { XrplWallet } from './xrpl/wallet.js';
+import { ensureTrustline } from './xrpl/payments.js';
 import { NPaymentError } from './errors.js';
 import type { Address, PublicClient, WalletClient } from 'viem';
 
@@ -35,6 +38,13 @@ export interface FlareMerchantDeps {
  * Otherwise falls back to header-presence check.
  */
 export function createPaywall(config: PaywallConfig, flareDeps?: FlareMerchantDeps) {
+  // v0.29: Build the optional merchant XRPL signer once. Mirrors XrplWallet's
+  // dual-mode (raw seed | OWS-managed key). When neither is set, the paywall
+  // runs in fail-fast mode and any RLUSD route with a missing trustline 503s.
+  const xrplMerchantWallet: XrplWallet | undefined = (config.xrpl?.seed || config.xrpl?.owsWallet)
+    ? new XrplWallet({ seed: config.xrpl.seed, owsWallet: config.xrpl.owsWallet })
+    : undefined;
+
   return (req: Req, res: Res, next: Next) => {
     const routeKey = `${req.method} ${req.path}`;
     const route = config.routes[routeKey];
@@ -101,7 +111,7 @@ export function createPaywall(config: PaywallConfig, flareDeps?: FlareMerchantDe
 
     // ── v0.28: XRPL x402 (T54 canonical) — owns the request when route.xrpl is set ─
     if (route.xrpl) {
-      handleXrplRoute(req, res, next, route);
+      handleXrplRoute(req, res, next, route, xrplMerchantWallet);
       return;
     }
 
@@ -228,6 +238,27 @@ function getFacilitator(url: string): XrplFacilitatorClient {
 }
 
 /**
+ * Per-process XRPL connection cache (one per network). Created lazily on
+ * first RLUSD trustline preflight; reused across requests. Avoids opening
+ * a fresh WebSocket on every paid call.
+ */
+const xrplConnectionsByNet = new Map<XrplNetwork, XrplConnection>();
+function getXrplConnection(network: XrplNetwork): XrplConnection {
+  let c = xrplConnectionsByNet.get(network);
+  if (!c) {
+    c = new XrplConnection(network === 'mainnet' ? 'xrpl-mainnet' : 'xrpl-testnet');
+    xrplConnectionsByNet.set(network, c);
+  }
+  return c;
+}
+
+/** Test/operational helper — clear connection cache (and disconnect each). */
+export function clearXrplConnectionCache(): void {
+  for (const c of xrplConnectionsByNet.values()) void c.disconnect().catch(() => {});
+  xrplConnectionsByNet.clear();
+}
+
+/**
  * Build the canonical PAYMENT-REQUIRED challenge from a route + a freshly
  * minted invoiceId. Returns the encoded header value.
  */
@@ -264,21 +295,69 @@ function buildXrplChallenge(
  *      facilitator.verify → facilitator.settle → set PAYMENT-RESPONSE → next().
  *   2. No header → mint invoiceId → emit PAYMENT-REQUIRED → 402.
  *
- * Errors short-circuit to 402 with `{ error, reason }` so buyers can retry.
+ * Both paths first run a merchant-trustline preflight (cache-hit ~ free) so
+ * an RLUSD route never advertises a destination that cannot receive the IOU.
+ *
+ * Errors short-circuit to 402/503 with `{ error, reason }` so buyers can retry.
  */
-function handleXrplRoute(req: Req, res: Res, next: Next, route: PaywallRouteConfig): void {
+function handleXrplRoute(req: Req, res: Res, next: Next, route: PaywallRouteConfig, signer?: XrplWallet): void {
+  void runXrplRoute(req, res, next, route, signer).catch((err) => {
+    // Last-resort safety net — preflight + settle paths catch their own errors.
+    if (typeof (res as { headersSent?: boolean }).headersSent === 'boolean'
+        && (res as { headersSent?: boolean }).headersSent) return;
+    res.status(500).json({ error: 'Internal xrpl handler error', reason: (err as Error).message });
+  });
+}
+
+async function runXrplRoute(
+  req: Req,
+  res: Res,
+  next: Next,
+  route: PaywallRouteConfig,
+  signer?: XrplWallet,
+): Promise<void> {
   const cfg = route.xrpl!;
+  const xrplNet = parseCaip2(cfg.network ?? 'xrpl:1');
+  const assetSymbol = cfg.asset ?? 'RLUSD';
+
+  // ── Merchant trustline preflight (RLUSD only — XRP needs no trustline). ─
+  if (assetSymbol === 'RLUSD') {
+    const issuer = getRlusdIssuer(xrplNet);
+    let state;
+    try {
+      state = await ensureTrustline(getXrplConnection(xrplNet), {
+        address: cfg.payTo,
+        issuer,
+        signer,
+      });
+    } catch (err) {
+      const e = err as NPaymentError;
+      res.status(503).json({
+        error: e.code ?? 'XRPL_MERCHANT_TRUSTLINE_FAILED',
+        reason: e.message,
+        hint: e.hint,
+      });
+      return;
+    }
+    if (!state.ok) {
+      res.status(503).json({
+        error: 'XRPL_MERCHANT_NO_TRUSTLINE',
+        reason: state.reason,
+        hint: signer
+          ? 'Trustline auto-create failed; verify the configured xrpl.seed has XRP for the reserve.'
+          : 'Set xrpl.seed (or xrpl.owsWallet) on createPaywall, OR pre-create the trustline manually.',
+      });
+      return;
+    }
+  }
+
   const sigHeader =
     (req.headers['payment-signature'] as string | undefined) ??
     (req.headers['PAYMENT-SIGNATURE'] as string | undefined);
 
   // Path 1: settlement attempt.
   if (sigHeader) {
-    void settleXrplPayment(req, res, next, route, sigHeader).catch((err) => {
-      // Defensive — settleXrplPayment itself catches and 402s; this is
-      // only for genuinely unexpected throws.
-      res.status(500).json({ error: 'Internal facilitator error', reason: (err as Error).message });
-    });
+    await settleXrplPayment(req, res, next, route, sigHeader);
     return;
   }
 

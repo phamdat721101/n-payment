@@ -632,6 +632,13 @@ export interface PaywallConfig {
   mpp?: { currency?: string; recipient?: string };
   /** Default facilitator URL for payment verification. Per-route x402.facilitator overrides this. */
   facilitator?: string;
+  /**
+   * v0.29 — Optional XRPL merchant signer used to auto-create RLUSD trustlines
+   * on the first 402 of any `route.xrpl` configured RLUSD endpoint. Mirrors
+   * `XrplWallet`'s dual-mode (raw seed OR OWS-managed key). Omit to run in
+   * fail-fast mode (recommended for prod where the trustline is pre-created).
+   */
+  xrpl?: { seed?: string; owsWallet?: string };
 }
 
 // ─── Discovery (Bazaar) ──────────────────────────────────────────────────────
