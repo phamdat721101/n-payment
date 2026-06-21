@@ -65,7 +65,19 @@ export interface PaymentRequiredEnvelope {
 export interface PaymentSignatureEnvelope {
   x402Version: 2;
   accepted: XrplPaymentRequirements;
-  payload: { signedTxBlob: string };
+  /**
+   * Signed XRPL Payment payload.
+   *
+   * - `signedTxBlob` — hex of the buyer-signed Payment transaction.
+   * - `invoiceId`   — the same invoice identifier carried in
+   *   `accepted.extra.invoiceId`. The T54 reference facilitator and
+   *   reference x402-xrpl Python client (server/fastapi.py L366,
+   *   client/presigned_payment_payer.py L230-L238) read the invoice id
+   *   from this field for invoice-binding verification, not from
+   *   `accepted.extra`. Without it the facilitator returns
+   *   `invalidReason="invalid_payload"`.
+   */
+  payload: { signedTxBlob: string; invoiceId?: string };
 }
 
 /** PAYMENT-RESPONSE body (server → client, on success). */

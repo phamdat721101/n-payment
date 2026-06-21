@@ -165,7 +165,9 @@ export class XrplSwapClient {
   }
 
   private assertSupportedPair(opts: XrplSwapQuoteOptions): void {
-    if (opts.from !== 'XRP' || opts.to !== RLUSD_CURRENCY) {
+    // Compare against the human-readable symbol — `opts.to` is the public
+    // SwapAsset enum ('XRP' | 'RLUSD'), not a wire currency code.
+    if (opts.from !== 'XRP' || opts.to !== 'RLUSD') {
       throw new NPaymentError(
         `Unsupported swap pair: ${opts.from}→${opts.to}`,
         'XRPL_UNSUPPORTED_PAIR',

@@ -46,7 +46,7 @@ function makeClient({ rlusdBalance = '0', xrpDrops = 1_000_000_000n }: { rlusdBa
         return { result: { account_data: { Balance: xrpDrops.toString(), Sequence: 1 } } };
       }
       if (req.command === 'account_lines') {
-        return { result: { lines: [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: rlusdBalance, limit: '1000000000' }] } };
+        return { result: { lines: [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: rlusdBalance, limit: '1000000000' }] } };
       }
       return { result: {} };
     }),
@@ -174,7 +174,7 @@ describe('XrplAdapter — treasury rescue', () => {
       balance = '10';
       client.request.mockImplementation(async (req: { command: string }) => {
         if (req.command === 'account_info') return { result: { account_data: { Balance: '1000000000', Sequence: 1 } } };
-        if (req.command === 'account_lines') return { result: { lines: [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance, limit: '1' }] } };
+        if (req.command === 'account_lines') return { result: { lines: [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance, limit: '1' }] } };
         return { result: {} };
       });
     });
@@ -197,7 +197,7 @@ describe('XrplAdapter — swap rescue', () => {
     swap.swap.mockImplementation(async () => {
       client.request.mockImplementation(async (req: { command: string }) => {
         if (req.command === 'account_info') return { result: { account_data: { Balance: '1000000000', Sequence: 1 } } };
-        if (req.command === 'account_lines') return { result: { lines: [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '1000', limit: '1' }] } };
+        if (req.command === 'account_lines') return { result: { lines: [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '1000', limit: '1' }] } };
         return { result: {} };
       });
       return { hash: '0xSWAP', amountInDrops: 1n, amountOut: '5', effectiveRateDropsPerUnit: 1 };
@@ -246,7 +246,7 @@ describe('XrplAdapter — concurrency', () => {
       swapCount++;
       client.request.mockImplementation(async (req: { command: string }) => {
         if (req.command === 'account_info') return { result: { account_data: { Balance: '1000000000', Sequence: 1 } } };
-        if (req.command === 'account_lines') return { result: { lines: [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '1000', limit: '1' }] } };
+        if (req.command === 'account_lines') return { result: { lines: [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '1000', limit: '1' }] } };
         return { result: {} };
       });
       return { hash: `0xSWAP_${swapCount}`, amountInDrops: 1n, amountOut: '5', effectiveRateDropsPerUnit: 1 };

@@ -175,7 +175,7 @@ export { XrplAdapter } from './adapters/xrpl.js';
 export type { XrplAdapterOptions } from './adapters/xrpl.js';
 // ─── XRPL v0.14 ─────────────────────────────────────────────────────────────
 export {
-  RLUSD_ISSUERS, RLUSD_CURRENCY, RLUSD_DECIMALS,
+  RLUSD_ISSUERS, RLUSD_CURRENCY, RLUSD_HEX, RLUSD_SYMBOL, RLUSD_DECIMALS,
   getRlusdIssuer, networkFromChainKey,
   parseRlusdAmount, formatRlusdAmount,
   padSendMaxDrops, computeQuoteSlippageBps,

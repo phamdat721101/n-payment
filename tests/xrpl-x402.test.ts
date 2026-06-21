@@ -219,7 +219,7 @@ describe('buildXrplRlusdPaymentTx — RLUSD presigned tx with invoice binding', 
     expect(tx.TransactionType).toBe('Payment');
     expect(tx.Account).toMatch(/^r/);
     expect(tx.Destination).toBe('rMerchant00000000000000000000000');
-    expect(tx.Amount).toEqual({ currency: 'RLUSD', issuer: RLUSD_ISSUERS.testnet, value: '0.01' });
+    expect(tx.Amount).toEqual({ currency: RLUSD_HEX, issuer: RLUSD_ISSUERS.testnet, value: '0.01' });
     expect(tx.SourceTag).toBe(DEFAULT_SOURCE_TAG);
     expect((tx.Memos as Array<{ Memo: { MemoData: string } }>)[0].Memo.MemoData).toBe('696E762D616263');
     expect(tx.LastLedgerSequence).toBe(1020); // 1000 + default offset 20
@@ -266,7 +266,7 @@ describe('buildXrplRlusdPaymentTx — RLUSD presigned tx with invoice binding', 
     ).rejects.toThrow(NPaymentError);
   });
 
-  it('Amount carries the symbolic currency "RLUSD" + issuer (xrpl.js serializes to canonical hex on sign)', async () => {
+  it('Amount + SendMax carry the canonical 40-hex RLUSD currency code + issuer', async () => {
     const { buildXrplRlusdPaymentTx } = await import('../src/xrpl/payments.js');
     const { conn } = mockConnection();
     const tx = await buildXrplRlusdPaymentTx(conn, {
@@ -277,8 +277,13 @@ describe('buildXrplRlusdPaymentTx — RLUSD presigned tx with invoice binding', 
       invoiceId: 'inv-abc',
     });
     const amt = tx.Amount as { currency: string; issuer: string };
-    expect(amt.currency).toBe('RLUSD');
+    expect(amt.currency).toBe(RLUSD_HEX);
     expect(amt.issuer).toBe(RLUSD_ISSUERS.testnet);
+    // T54 IOU policy: SendMax must equal Amount (same currency+issuer+value).
+    const sendMax = tx.SendMax as { currency: string; issuer: string; value: string };
+    expect(sendMax.currency).toBe(RLUSD_HEX);
+    expect(sendMax.issuer).toBe(RLUSD_ISSUERS.testnet);
+    expect(sendMax.value).toBe('0.01');
   });
 });
 

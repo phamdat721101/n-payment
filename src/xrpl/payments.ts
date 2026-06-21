@@ -401,11 +401,20 @@ export async function buildXrplRlusdPaymentTx(
 
   const memo = hexInvoiceMemo(invoiceId); // throws on oversize / empty
 
+  // T54 IOU policy: the Payment must include `SendMax` with the same
+  // currency + issuer + value as `Amount` so the Payment is locked to a
+  // same-asset direct transfer (no cross-currency / AMM hops). Without it
+  // the facilitator rejects the tx with
+  // `invalidReason="unsupported_payment_features"` (see x402-xrpl@0.2.0
+  // client/presigned_payment_payer.py L202-L207).
+  const iouAmount = { currency: RLUSD_CURRENCY, issuer, value: amount };
+
   const draft: Record<string, unknown> = {
     TransactionType: 'Payment',
     Account: fromAddress,
     Destination: payTo,
-    Amount: { currency: RLUSD_CURRENCY, issuer, value: amount },
+    Amount: iouAmount,
+    SendMax: iouAmount,
     SourceTag: sourceTag,
     Memos: [memo],
   };

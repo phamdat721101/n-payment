@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NPaymentError } from '../src/errors.js';
 import { XrplSwapClient } from '../src/xrpl/swap.js';
-import { RLUSD_ISSUERS } from '../src/xrpl/utils.js';
+import { RLUSD_HEX, RLUSD_ISSUERS } from '../src/xrpl/utils.js';
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ describe('XrplSwapClient.swap', () => {
     expect(tx.TransactionType).toBe('Payment');
     expect(tx.Account).toBe(TEST_ADDR);
     expect(tx.Destination).toBe(TEST_ADDR);
-    expect(tx.Amount).toEqual({ currency: 'RLUSD', issuer: RLUSD_ISSUERS.testnet, value: '10' });
+    expect(tx.Amount).toEqual({ currency: RLUSD_HEX, issuer: RLUSD_ISSUERS.testnet, value: '10' });
     expect(BigInt(tx.SendMax)).toBe(10_100_000n); // 10_000_000 * 1.01
     expect(tx.Paths).toEqual([['p1']]);
     expect(tx.Flags).toBeUndefined(); // no tfPartialPayment

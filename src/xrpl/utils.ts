@@ -14,7 +14,6 @@ export const RLUSD_ISSUERS: Readonly<Record<XrplNetwork, string>> = Object.freez
   testnet: 'rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV',
 });
 
-export const RLUSD_CURRENCY = 'RLUSD' as const;
 /**
  * Canonical 40-hex XRPL currency code for RLUSD. The XRPL exact x402 scheme
  * (T54 reference impl) uses this in `accepts[].asset`; the human-readable
@@ -23,6 +22,18 @@ export const RLUSD_CURRENCY = 'RLUSD' as const;
  * Source: https://xrpl-x402.t54.ai/docs/xrpl-scheme#asset-types
  */
 export const RLUSD_HEX = '524C555344000000000000000000000000000000' as const;
+
+/**
+ * Canonical RLUSD currency code as used on the wire (XRPL `Amount.currency`,
+ * `LimitAmount.currency`, `account_lines.lines[].currency`, etc.). Equal to
+ * {@link RLUSD_HEX}; xrpl.js v4 + rippled reject the 5-character ASCII
+ * "RLUSD" form on every wire-bound field. For the human-readable symbol use
+ * {@link RLUSD_SYMBOL}.
+ */
+export const RLUSD_CURRENCY: typeof RLUSD_HEX = RLUSD_HEX;
+
+/** Human-readable RLUSD symbol (display only — never used on the wire). */
+export const RLUSD_SYMBOL = 'RLUSD' as const;
 
 /**
  * Default XRPL `SourceTag` stamped on x402 Payment transactions. Used by

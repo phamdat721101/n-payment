@@ -5,7 +5,7 @@ import {
   MemoryVaultIdStore,
   type VaultIdStore,
 } from '../src/xrpl/treasury.js';
-import { RLUSD_ISSUERS } from '../src/xrpl/utils.js';
+import { RLUSD_HEX, RLUSD_ISSUERS } from '../src/xrpl/utils.js';
 import { clearAccountStateCache } from '../src/xrpl/payments.js';
 
 const TEST_ADDR = 'rTreasury00000000000000000000000';
@@ -48,7 +48,7 @@ function makeVault() {
     getVaultInfo: vi.fn(async () => ({
       vaultId: 'VAULT_NEW',
       owner: TEST_ADDR,
-      asset: { currency: 'RLUSD', issuer: RLUSD_ISSUERS.testnet },
+      asset: { currency: RLUSD_HEX, issuer: RLUSD_ISSUERS.testnet },
       totalAssets: '50',
       totalShares: '50000000',
       lossUnrealized: '0',
@@ -129,7 +129,7 @@ describe('XrplTreasuryManager.ensureVault', () => {
 describe('XrplTreasuryManager.ensureLiquid', () => {
   it('no-op when liquid balance ≥ amount', async () => {
     const vault = makeVault();
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '100' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '100' }];
     const tm = new XrplTreasuryManager(
       { vaultId: 'V1' },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },
@@ -140,7 +140,7 @@ describe('XrplTreasuryManager.ensureLiquid', () => {
 
   it('withdraws the exact shortfall', async () => {
     const vault = makeVault();
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '5' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '5' }];
     const tm = new XrplTreasuryManager(
       { vaultId: 'V1' },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },
@@ -155,7 +155,7 @@ describe('XrplTreasuryManager.ensureLiquid', () => {
 describe('XrplTreasuryManager sweep', () => {
   it('sweepExcess deposits only above minIdleBalance', async () => {
     const vault = makeVault();
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '25' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '25' }];
     const tm = new XrplTreasuryManager(
       { autoYield: true, vaultId: 'V1', minIdleBalance: '10' },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },
@@ -166,7 +166,7 @@ describe('XrplTreasuryManager sweep', () => {
 
   it('sweepExcess no-op when liquid ≤ minIdleBalance', async () => {
     const vault = makeVault();
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '5' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '5' }];
     const tm = new XrplTreasuryManager(
       { autoYield: true, vaultId: 'V1', minIdleBalance: '10' },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },
@@ -178,7 +178,7 @@ describe('XrplTreasuryManager sweep', () => {
   it('scheduleSweep coalesces — multiple calls produce one sweep', async () => {
     vi.useFakeTimers();
     const vault = makeVault();
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '50' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '50' }];
     const tm = new XrplTreasuryManager(
       { autoYield: true, vaultId: 'V1', minIdleBalance: '10', sweepDebounceMs: 1000 },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },
@@ -193,7 +193,7 @@ describe('XrplTreasuryManager sweep', () => {
     vi.useFakeTimers();
     const vault = makeVault();
     (vault.deposit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '50' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '50' }];
     const tm = new XrplTreasuryManager(
       { autoYield: true, vaultId: 'V1', minIdleBalance: '10', sweepDebounceMs: 100 },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },
@@ -218,7 +218,7 @@ describe('XrplTreasuryManager state', () => {
 
   it('getState returns liquid + supplied + vaultId + address', async () => {
     const vault = makeVault();
-    const lines = [{ currency: 'RLUSD', account: RLUSD_ISSUERS.testnet, balance: '12' }];
+    const lines = [{ currency: RLUSD_HEX, account: RLUSD_ISSUERS.testnet, balance: '12' }];
     const tm = new XrplTreasuryManager(
       { vaultId: 'V1' },
       { connection: makeConnection(makeClient({ lines })), wallet: makeWallet(), vault, network: 'testnet' },

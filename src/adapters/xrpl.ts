@@ -178,10 +178,15 @@ export class XrplAdapter implements PaymentAdapter {
     }
 
     // 4. Retry HTTP with canonical PAYMENT-SIGNATURE header.
+    //    NOTE: `payload.invoiceId` is required by the T54 reference
+    //    facilitator + reference x402-xrpl client (see
+    //    PaymentSignatureEnvelope.payload jsdoc). Without it
+    //    `xrpl-facilitator-{testnet|mainnet}.t54.ai/verify` returns
+    //    `invalidReason="invalid_payload"`.
     const sigHeader = encodePaymentSignatureHeader({
       x402Version: 2,
       accepted,
-      payload: { signedTxBlob: signed.tx_blob },
+      payload: { signedTxBlob: signed.tx_blob, invoiceId: accepted.extra.invoiceId },
     });
     const retryHeaders = new Headers(init?.headers);
     retryHeaders.set('PAYMENT-SIGNATURE', sigHeader);
