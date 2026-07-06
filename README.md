@@ -392,6 +392,20 @@ const gate = new StellarKyaGate({ minKyaTier: 2 });
 app.get('/skill', gate.middleware(), (_req, res) => res.json({ data: 'gated' }));
 ```
 
+### Cash out to fiat via MoneyGram on Stellar (SEP-10 / SEP-24 / SEP-31 / SEP-38)
+
+An agent earning USDC or MGUSD on Stellar can cash out to physical fiat at any of MoneyGram's ~174 supported countries in one line. The same facade covers pre-flight FX quotes (SEP-38) and agent-to-agent direct payment (SEP-31). Testnet dev flow points at SDF's reference test anchor at `testanchor.stellar.org` — no MoneyGram allowlist required.
+
+```typescript
+import { stellarAgentKit } from 'n-payment';
+
+const kit    = stellarAgentKit(signer);                        // mainnet default
+const quote  = await kit.quote({ amount: '10.00', asset: 'USDC', fiat: 'USD', country: 'US' });
+const cash   = await kit.cashOut('10.00', 'USDC', 'USD');      // opens moreInfoUrl for KYC + retail pickup
+```
+
+See `~/.kiro/skills/moneygram-stellar-agent-kit/SKILL.md` for the full mainnet + testnet quickstart.
+
 ---
 
 ## Capability matrix

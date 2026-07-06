@@ -93,11 +93,16 @@ export { OffRampClient, MockMoonPayAdapter } from './offramp/index.js';
 export {
   StellarAnchorClient,
   DefaultAnchorRegistry,
+  stellarAgentKit,
   type AnchorDescriptor,
   type AnchorRegistry,
   type AnchorServiceUrls,
   type OffRampInitiateInput,
   type OffRampHandle,
+  type OffRampQuoteInput,
+  type OffRampQuoteResult,
+  type OffRampB2BInput,
+  type OffRampB2BHandle,
 } from './offramp/index.js';
 
 // ─── Faucet ──────────────────────────────────────────────────────────────────
