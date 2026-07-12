@@ -196,6 +196,31 @@ export type {
 } from './xrpl/treasury.js';
 export type { XrplTreasuryConfigInput } from './types.js';
 
+// ─── XRPL x402 facilitator (T54 scheme) ─────────────────────────────────────
+// The merchant-side wire codecs + facilitator HTTP client for the XRPL exact
+// scheme. Compiled since v0.22 but previously unexported — surfacing them lets
+// merchants (e.g. HyperMove) emit PAYMENT-REQUIRED and settle via /verify+/settle.
+export {
+  XrplFacilitatorClient,
+  defaultFacilitatorUrl,
+  hexInvoiceMemo,
+  encodePaymentRequiredHeader,
+  decodePaymentRequiredHeader,
+  encodePaymentSignatureHeader,
+  decodePaymentSignatureHeader,
+  encodePaymentResponseHeader,
+  decodePaymentResponseHeader,
+} from './xrpl/x402-scheme.js';
+export type {
+  XrplPaymentRequirements,
+  PaymentRequiredEnvelope,
+  PaymentSignatureEnvelope,
+  PaymentResponseEnvelope,
+  FacilitatorVerifyInput,
+  FacilitatorVerifyResult,
+  FacilitatorSettleResult,
+} from './xrpl/x402-scheme.js';
+
 // ─── Transactor ──────────────────────────────────────────────────────────────
 export { ViemTransactor } from './transactor.js';
 export type { TransactionResult } from './transactor.js';
