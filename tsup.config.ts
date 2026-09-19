@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/spacerouter/index.ts', 'src/agent/mcp-server.ts'],
+  entry: ['src/index.ts', 'src/spacerouter/index.ts', 'src/agent/mcp-server.ts', 'src/research/index.ts'],
   format: ['cjs', 'esm'],
   dts: true,
   clean: true,

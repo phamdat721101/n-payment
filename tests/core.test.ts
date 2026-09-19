@@ -105,8 +105,10 @@ describe('createConfig', () => {
 // ─── chains ──────────────────────────────────────────────────────────────────
 
 describe('chains', () => {
-  it('has all 30 chains', () => {
-    expect(Object.keys(CHAINS)).toHaveLength(30);
+  it('has all 31 chains', () => {
+    // v0.31 — added 'arbitrum-one' for OnchainLendingResearchService
+    // (Morpho Blue / Aave v3 / Pendle adapters). 30 -> 31.
+    expect(Object.keys(CHAINS)).toHaveLength(31);
   });
 
   it('getChain returns correct config', () => {

@@ -20,6 +20,11 @@
       "types": "./dist/agent/mcp-server.d.ts",
       "import": "./dist/agent/mcp-server.mjs",
       "require": "./dist/agent/mcp-server.js"
+    },
+    "./research": {
+      "types": "./dist/research/index.d.ts",
+      "import": "./dist/research/index.mjs",
+      "require": "./dist/research/index.js"
     }
   },
   "files": [
@@ -32,6 +37,9 @@
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:live-onchain": "RUN_LIVE_ONCHAIN_TESTS=true vitest run",
+    "test:contracts": "cd contracts && forge test",
+    "test:contracts:fork": "cd contracts && FORK_RPC_URL=${FORK_RPC_URL:-https://ethereum-rpc.publicnode.com} forge test --fork-url mainnet_fork",
     "lint": "tsc --noEmit",
     "prepublishOnly": "pnpm build"
   },
@@ -99,7 +107,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "viem": "^2.21.0"
+    "viem": "^2.21.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@stellar/stellar-sdk": "^15.1.0",

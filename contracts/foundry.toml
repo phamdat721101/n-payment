@@ -1,0 +1,30 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+solc_version = "0.8.26"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+
+# Fork RPC endpoint used by fork tests (Task 14). Requires FORK_RPC_URL to
+# be set in the environment — per plan requirement #4 (no dedicated RPC
+# credentials provisioned yet), point this at a public, free-tier endpoint
+# such as https://ethereum-rpc.publicnode.com. Foundry's ${VAR} syntax does
+# not support shell-style ${VAR:-default} fallbacks, so no default is
+# baked in here — set FORK_RPC_URL explicitly before running fork tests.
+[rpc_endpoints]
+mainnet_fork = "${FORK_RPC_URL}"
+
+[fuzz]
+runs = 256
+
+[fmt]
+line_length = 120
+tab_width = 4

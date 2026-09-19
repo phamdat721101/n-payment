@@ -35,7 +35,9 @@ export type ChainKey =
   | 'initia-testnet'
   // v0.25 — Celo L2 (CIP-64 fee abstraction + Mento corridor + Agent Visa)
   | 'celo-mainnet'
-  | 'celo-sepolia';
+  | 'celo-sepolia'
+  // v0.31 — OnchainLendingResearchService multi-chain lending adapters
+  | 'arbitrum-one';
 
 // ─── Celo (v0.25) ────────────────────────────────────────────────────────────
 

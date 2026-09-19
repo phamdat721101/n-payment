@@ -1,0 +1,12 @@
+# Foundry build artifacts and vendored dependencies — never commit these.
+# Standard forge-init .gitignore (this project ran `forge init --no-git`,
+# so no .gitignore was auto-created; adding it now before the first commit).
+cache/
+out/
+broadcast/
+
+# Vendored third-party libraries (forge-std, OpenZeppelin) — installed via
+# `forge install`, not authored here. Should be a git submodule or
+# reinstalled via `forge install` on a fresh clone, never committed as
+# plain files.
+lib/

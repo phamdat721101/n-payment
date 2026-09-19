@@ -274,6 +274,20 @@ export const CHAINS: Record<ChainKey, ChainConfig> = {
       RLUSD: '0x8d58C0C60B8D6b88Fa98B291a646dB34d0F98258',
     },
   },
+  // v0.31 — OnchainLendingResearchService (Arbitrum: Morpho Blue / Aave v3 / Pendle
+  // adapters). No payment adapter wired to this chain yet — protocols: [] until
+  // a PaymentAdapter targets Arbitrum One directly (research adapters in
+  // src/research/adapters/* use their own address maps, not this registry).
+  'arbitrum-one': {
+    chainId: 42161,
+    caip2: 'eip155:42161',
+    name: 'Arbitrum One',
+    rpcUrl: 'https://arb1.arbitrum.io/rpc',
+    protocols: [],
+    tokens: {
+      USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+    },
+  },
   'ink-mainnet': {
     chainId: 57073,
     caip2: 'eip155:57073',
